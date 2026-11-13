@@ -1,0 +1,9 @@
+.dev.vars*
+.env*
+dist/
+outputs/
+node_modules/
+
+# Safe configuration templates
+!.env.example
+!.dev.vars.example

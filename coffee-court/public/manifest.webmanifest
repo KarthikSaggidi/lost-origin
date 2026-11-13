@@ -1,0 +1,17 @@
+{
+  "name": "Lost Origin Coffee House",
+  "short_name": "Lost Origin",
+  "description": "Coffee House \u00b7 Takeaway \u00b7 Four Pickleball Courts",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#111111",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

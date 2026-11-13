@@ -1,0 +1,6 @@
+# The root setup command generates matching relay secrets for both services.
+ADMIN_ORIGIN=http://127.0.0.1:5174
+BACKEND_ORIGIN=http://127.0.0.1:5173
+AUTH_RELAY_SECRET=
+# Required only when proxying an owner-private hosted backend.
+BACKEND_SERVICE_TOKEN=

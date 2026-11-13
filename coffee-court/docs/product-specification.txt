@@ -1,0 +1,761 @@
+Coffee Shop Software: Product and Technical Specification
+Nov 10, 2026 · @Karthik Saggidi
+This document specifies a responsive take-away-only coffee shop website with online ordering and pickleball court booking, plus a complete admin panel covering inventory, POS, payments, accounting, WhatsApp and partner management.
+1. Overview and goals
+The business is a take-away-only coffee shop with a pickleball court, run by three or more partners. The software must let customers order and book online, let staff bill at the counter, and let partners see stock, cash, tax and profit in one place.
+Business goals
+• Take 30% or more of orders online within six months, reducing counter queues.
+• Fill off-peak court hours through online booking, advance payment and offers.
+• Give every partner a trusted, auditable view of sales, expenses and profit share.
+• Cut stock wastage and stock-outs through recipe-based inventory.
+In scope
+• Public responsive website: hero, banners, menu, take-away ordering, court booking, contact.
+• Admin panel: dashboard, orders, POS and offline billing, inventory, payments, pickleball bookings, accounting, partners, campaigns and banners, WhatsApp, reports, settings.
+• Integrations: payment gateway, WhatsApp Business API, SMS/email, thermal printers.
+Out of scope (version 1)
+• Home delivery, delivery partners and delivery-zone logic. Orders are pickup only.
+• Native mobile apps. The website is built as an installable progressive web app (PWA) instead.
+• Multi-branch support. The data model is branch-ready, but only one outlet is launched.
+Key rules that shape the design
+1. Every order is take-away. The customer chooses a pickup time slot, never an address.
+2. Online orders and counter bills share one order table, one stock ledger and one payment ledger.
+3. Court bookings and cafe sales feed the same accounting books but are reported as separate revenue streams.
+4. Money-related records are never deleted. Corrections are made through reversing entries.
+2. Users and roles
+Access is role-based. Each role sees only the menu items it needs, and every sensitive action (refund, discount override, stock adjustment, bill deletion request) is written to an audit log.
+Role
+Who
+Main access
+Restricted from
+Customer
+Website visitor or logged-in user
+Menu, cart, order, order history, court booking, loyalty points
+Admin panel
+Cashier
+Counter staff
+POS billing, order handling, cash drawer, day-end count
+Accounting, settings, reports, stock cost
+Barista / Kitchen
+Preparation staff
+Kitchen display screen, order status changes
+Payments, billing, reports
+Court Manager
+Pickleball staff
+Court calendar, bookings, check-in, walk-in bookings
+Cafe inventory, accounting
+Store Manager
+Day-to-day operator
+Orders, inventory, purchases, staff shifts, daily reports, refunds up to a set limit
+Partner accounts, profit share, system settings
+Accountant
+Bookkeeper
+Ledgers, expenses, GST reports, reconciliation, payables
+POS billing, stock edits
+Partner
+Each of the 3+ owners
+Read-only dashboards, profit and loss, own capital and drawings, approvals
+Day-to-day edits
+Super Admin
+Lead owner or technical admin
+Everything, including users, roles, settings, integrations
+None
+Rules
+• Permissions are configurable per role at the module level: view, create, edit, delete, approve, export.
+• Partners can be required to approve high-value items, for example expenses above a set amount or any capital withdrawal.
+• Staff log in with a username and PIN at the counter, and with email and password plus optional two-step verification on the admin panel.
+• Customers log in with a mobile number and a one-time password (OTP). Guest checkout is allowed for take-away orders.
+3. System architecture
+The website, admin panel and POS all call the same backend, so an online order, a counter bill and a court booking land in the same stock, payment and accounting records.
+4. Customer website
+The website is mobile-first, loads in under three seconds on a 4G phone, and every visible block (hero, banners, menu, offers, opening hours, court prices) is editable from the admin panel without a developer.
+Pages and features
+Page
+What the customer sees
+Managed from admin
+Home
+Full-width hero with headline, sub-text, two call-to-action buttons (Order Now, Book a Court), rotating banner strip, best sellers, offers, court highlight, opening hours, location map, Instagram feed
+Hero image or video, text, buttons, banner order and schedule
+Menu
+Categories, search, veg/non-veg and allergen tags, photos, size and add-on options, sold-out badge, live availability
+Products, prices, photos, tags, availability, sort order
+Cart and checkout
+Item list, notes, pickup time slot picker, coupon, tax breakup, pay online or pay at counter
+Slot rules, payment modes, minimum order, coupon rules
+Order tracking
+Live status: Received, Preparing, Ready for pickup, Completed, with pickup code
+Status updates from kitchen and POS
+Pickleball
+Court list, rules, price table, date and time grid, booking and payment
+Courts, slots, pricing, rules text
+My account
+Order history, reorder, bookings, saved favourites, loyalty points, invoices
+Customer records and points
+Offers
+Active campaigns and coupons
+Campaigns and coupons
+About and contact
+Story, gallery, address, phone, WhatsApp chat button, map
+Page content and gallery
+Policies
+Privacy, terms, cancellation and refund rules, FSSAI licence number
+Static page editor
+Hero section and banner behaviour
+• Hero supports an image, a short looping video, or a slider of up to five slides, each with its own heading, sub-heading, button label and link.
+• Separate desktop and mobile images are uploaded per slide, and the site picks the right one automatically.
+• Top announcement bar for short notices such as holiday timings or a limited offer.
+• Each banner has a start date, end date, placement (hero, top bar, menu page, checkout, pop-up) and an on or off switch.
+• Banner click counts are tracked so campaigns can be compared.
+Non-functional requirements for the website
+• Responsive from 320 px phones to wide desktops, touch-friendly buttons of at least 44 px.
+• Installable as a PWA, with a cached menu for poor network.
+• Search-engine friendly: server-rendered pages, clean URLs, meta tags, sitemap, structured data for the restaurant and opening hours.
+• Accessibility to WCAG 2.1 AA: contrast, keyboard use, alt text, readable font sizes.
+• Languages: English at launch, with the text layer prepared for Telugu and Hindi.
+5. Take-away ordering
+Every online order ends with the customer collecting at the counter. There is no address field, no delivery charge and no rider logic anywhere in the product.
+Customer flow
+1. Customer browses the menu and adds items with size, add-ons and notes.
+2. At checkout the customer enters name and mobile number, verified by OTP for first-time guests.
+3. Customer picks a pickup slot, for example today 5:15 to 5:30 pm. Slots are capped by how many drinks the bar can make per 15 minutes.
+4. Customer pays online (UPI, card, wallet) or chooses pay at counter, if the admin has enabled it for that customer type.
+5. The order appears on the POS and kitchen screen with a sound alert, and the customer receives a WhatsApp confirmation with a pickup code.
+6. When the order is ready the customer gets a ready message, shows the code at the counter, and the cashier marks it collected.
+Order statuses
+Status
+Set by
+Customer message
+Pending payment
+System
+Complete payment within 10 minutes or the order is released
+Received
+System or cashier
+Order confirmed, pickup time shown
+Preparing
+Barista
+Being prepared
+Ready
+Barista
+Ready for pickup, show code
+Completed
+Cashier
+Thank you, rate your order
+Cancelled
+Customer (before preparing) or manager
+Cancelled, refund timeline if paid
+No-show
+System after the grace period
+Order not collected
+Ordering rules (all editable in settings)
+• Opening and closing time, last-order time, and a pause switch for when the shop is too busy.
+• Minimum preparation time, for example 10 minutes, so the first slot is never too soon.
+• Maximum orders per slot, and a maximum drinks-per-slot limit for the bar.
+• Advance ordering up to a set number of days, for example 2.
+• Online cancellation allowed until the order moves to Preparing. After that, only a manager can cancel.
+• No-show policy: prepaid food orders are not refunded after a set grace time, for example 30 minutes, unless the manager overrides.
+• Stock-aware menu: an item is hidden or marked sold out automatically when its ingredients run out (see Inventory).
+• Reorder button and saved favourites for repeat customers.
+Kitchen display screen
+A full-screen board with columns New, Preparing, Ready. Late orders turn amber and then red. Each ticket shows pickup time, items with modifiers, notes and source (online, counter). Tapping a ticket moves it forward.
+6. Pickleball court booking
+Court booking is a separate module with its own calendar, pricing and reports, but the same customer account, payment gateway and accounting books as the cafe.
+Customer flow
+1. Customer opens Pickleball, picks a date, and sees a grid of courts against time slots with free, booked and blocked states.
+2. Customer selects one or more consecutive slots, adds the number of players, and sees the price including tax.
+3. Customer pays the full amount or an advance (for example 50%) online. Unpaid holds expire after 10 minutes.
+4. WhatsApp confirmation with court, time, and a QR code for check-in. Reminder 2 hours before.
+5. On arrival, staff scan the QR code. The booking becomes Checked in, and the customer can add cafe items to the same bill.
+Court setup (admin)
+• Courts: name, indoor or outdoor, surface, status, photos.
+• Slot length: 30, 60 or 90 minutes, set per court.
+• Operating hours per weekday, with holiday and maintenance blocks.
+• Equipment as add-ons: paddle rental, ball pack, coaching session.
+Pricing rules
+Rule
+Example
+Notes
+Base rate
+Per court per hour
+Different for each court if needed
+Peak and off-peak
+Higher on weekday evenings and weekends
+Time-band table
+Member rate
+Lower rate for members or packages
+Linked to membership plan
+Package or pass
+10-hour pass
+Hours deducted per booking
+Coupons and campaigns
+Off-peak 20% off
+Controlled by the Campaigns module
+Tax
+GST as configured
+Shown on the invoice
+Booking rules
+• No double booking. The system locks a slot at the database level while a payment is in progress.
+• Cancellation window, for example full refund up to 12 hours before, 50% up to 4 hours, none after.
+• Rescheduling allowed once, subject to availability.
+• Late-arrival grace time, for example 15 minutes, after which the slot is released.
+• Recurring bookings for weekly groups and leagues, with a block-booking option for tournaments.
+• Walk-in bookings created by the Court Manager on a tablet, paid by cash or UPI.
+• Waiting list: customers can join a waitlist for a full slot and are notified if it is released.
+Booking statuses: Held, Confirmed, Checked in, Completed, Cancelled, No-show, Refunded.
+Court reports: utilisation percentage by court and hour, revenue per court, peak hours, cancellations, repeat players, equipment revenue.
+7. Admin dashboard and website management
+The dashboard opens with today's numbers and alerts, filtered by date range and by revenue stream (cafe counter, online orders, court booking).
+Dashboard widgets
+Widget
+Shows
+Today at a glance
+Sales, orders, average bill, court bookings, cash in drawer, online vs counter split
+Live orders
+Orders waiting, preparing, ready, with late-order alerts
+Sales trend
+Daily, weekly, monthly revenue chart with comparison to the previous period
+Top products
+Best and worst sellers by quantity and margin
+Hourly heatmap
+Busy hours for cafe and courts
+Court utilisation
+Booked hours against available hours per court
+Stock alerts
+Items below reorder level, items expiring soon
+Payments
+Collected by mode, pending settlements, failed and refunded payments
+Profit snapshot
+Revenue, cost of goods, expenses, estimated profit for the month
+Staff
+Who is on shift, cash short or over on the last day-end
+Website and content management
+• Hero and banner manager with drag-and-drop ordering, scheduling, preview on desktop and mobile, and publish or unpublish.
+• Page editor for About, Contact, Policies and Gallery with image upload and cropping.
+• Menu management: categories, products, photos, variants, add-ons, tags, availability and display order.
+• Announcement bar, pop-up and footer link management.
+• SEO fields per page: title, description, share image.
+• Draft and publish workflow with version history, so a mistake can be rolled back in one click.
+Campaigns, banners and coupons
+• Campaign types: percentage off, flat off, buy one get one, combo price, free add-on, happy hour, first-order discount, court off-peak discount, referral reward.
+• Each campaign has audience (everyone, new, returning, members, inactive for 30 days), channel (website, POS, WhatsApp), validity, usage limit, minimum bill and products or courts covered.
+• Coupon codes can be generated in bulk, and each has per-customer limits.
+• Campaign reports show views, clicks, redemptions, revenue influenced and discount cost.
+• Loyalty: points per rupee spent, redemption at checkout or POS, tiers if wanted, and birthday or anniversary offers.
+8. Inventory
+Inventory is recipe-based: every sale automatically deducts raw materials, so stock on screen matches stock on the shelf apart from wastage and theft, which are tracked separately.
+Item types
+• Raw materials: coffee beans, milk, syrups, sugar, cups, lids, sleeves, bakery inputs.
+• Finished goods bought ready: packaged snacks, bottled water, bakery items.
+• Prepared items: house-made sauces or batters with their own recipe and yield.
+• Court consumables: balls, grip tapes, rental paddles (tracked as assets with a count).
+Core features
+Feature
+Detail
+Item master
+SKU, category, unit of measure with conversions (kg to g, litre to ml), HSN code, GST rate, reorder level, par level, shelf life
+Recipes (BOM)
+Each menu item and size lists ingredients and quantities, so a large latte deducts milk, beans and a cup
+Stock ledger
+Every movement is a ledger line: purchase, sale, wastage, transfer, adjustment, return
+Purchases
+Purchase order, goods receipt, supplier invoice match, landed cost, payment status
+Suppliers
+Contacts, price history, lead time, outstanding payable, rating
+Stock count
+Daily or weekly physical count with variance report and manager approval before adjustment
+Wastage
+Reason codes (spoiled, spilled, expired, staff meal, complimentary) with photo option
+Batches and expiry
+Batch number and expiry for dairy and bakery, first-expiry-first-out alerts
+Costing
+Weighted average cost, recipe cost, margin per item, food cost percentage
+Alerts
+Low stock, out of stock, expiry within N days, price spikes, unusual wastage
+Auto-ordering
+Suggested purchase list based on the last 4 weeks of usage and par levels
+How it connects to ordering
+• When any ingredient reaches zero, dependent menu items are marked sold out on the website and POS within seconds.
+• Low-stock alerts go to the manager by WhatsApp and in the dashboard.
+• Approved stock adjustments post a matching entry to accounting (stock loss expense).
+Inventory reports: current stock valuation, stock movement, purchase register, wastage by reason, theoretical vs actual usage, supplier-wise purchases, item-wise margin, dead stock.
+9. POS and offline billing
+The point-of-sale screen is a touch-first web app that runs on a counter tablet or PC. It keeps billing even when the internet drops, and syncs when the connection returns.
+Billing features
+• Quick product grid by category, search, barcode scan, and favourites for the fastest sellers.
+• Modifiers (size, milk type, extra shot), item notes and combo handling.
+• Order source tag: counter, online pickup, court booking add-on, phone order.
+• Discounts by percentage or amount with a reason, protected by a manager PIN above a limit.
+• Split payment across cash, UPI and card, and a split bill by items or by person.
+• Hold and recall bills, merge or move items between bills, and a repeat-last-order button for regulars.
+• Customer lookup by mobile number to apply loyalty points and send the bill by WhatsApp.
+• Court add-on: attach cafe items to a court booking and settle everything at checkout.
+Receipts and printing
+• GST-compliant tax invoice with shop name, GSTIN, FSSAI number, invoice number, HSN or SAC codes, tax breakup and a payment QR code.
+• Thermal printing on 58 mm or 80 mm printers, kitchen order ticket (KOT) printing for the bar, and PDF or WhatsApp receipt as an option.
+• Gapless invoice numbering per financial year, as GST requires. Cancelled bills are voided with a reason and a credit note, never deleted.
+Offline mode
+Situation
+Behaviour
+Internet drops
+POS keeps working from a local copy of menu, prices and customers
+Billing offline
+Bills are saved on the device with a temporary number and cash or UPI-at-counter payment
+Online orders while offline
+Not received until reconnect, so the screen shows an offline banner
+Connection returns
+Queued bills sync automatically, final invoice numbers are assigned, stock is deducted
+Conflicts
+If stock or price changed meanwhile, the bill keeps its original price and a manager sees a conflict report
+Device lost
+Admin can sign out a device remotely, and unsynced data is limited to that device
+Shifts and cash control
+1. Cashier opens a shift with an opening cash count.
+2. All cash in, cash out (petty cash, supplier payments) and refunds are logged against the shift.
+3. At close, the cashier counts cash by denomination. The system shows expected cash, actual cash and the difference.
+4. A day-end report (Z-report) is generated with sales by payment mode, tax collected, discounts, voids and refunds, and then sent to managers and partners.
+Hardware supported: thermal receipt printer, cash drawer, barcode scanner, customer-facing display (optional), card or UPI soundbox (optional).
+10. Payments
+All money coming in, whether online, at the counter or through court bookings, is recorded in one payment ledger and tagged by mode, source and settlement status.
+Payment modes
+Mode
+Channel
+Handling
+UPI
+Website, POS
+Dynamic QR or intent link through the gateway, confirmed by webhook
+Debit and credit cards
+Website, POS
+Gateway checkout or card machine entry
+Net banking and wallets
+Website
+Through the gateway
+Cash
+POS, court desk
+Logged against the cashier shift
+Pay at counter
+Website orders
+Order held until paid at pickup, allowed only for trusted customers
+Store credit and loyalty points
+Website, POS
+Deducted from the customer balance
+Gift cards or court passes
+Website, POS
+Balance tracked per card
+Payment gateway
+A single India-based gateway such as Razorpay, Cashfree or PayU is integrated through a payment-provider layer, so the gateway can be swapped without changing the order logic. The final choice depends on fees and settlement terms, listed in the open questions.
+Rules the system enforces
+• Payment status is confirmed only by the gateway webhook, never by the customer's browser, so a closed tab cannot create a false paid order.
+• Duplicate-payment protection through idempotency keys on every payment request.
+• Held orders and court slots are released automatically if payment is not completed in 10 minutes.
+• Refunds go back to the original payment source, are linked to the order or booking, and need manager approval above a set amount.
+• Partial refunds, for example one item missing, are supported, with a credit note generated automatically.
+• Card and UPI details are never stored on the shop's servers. The gateway holds them.
+Reconciliation
+• Daily import of gateway settlement reports and matching against the ledger, with unmatched or short-settled payments flagged.
+• Gateway fees and GST on fees are booked automatically as expenses.
+• A cash book and a bank book, with deposit entries for cash taken to the bank.
+• Payment reports: collection by mode, failed payments, refunds, pending settlements, chargebacks.
+11. Accounting and partner management
+With three or more partners, the books must be transparent and auditable. The accounting module uses double-entry bookkeeping and posts entries automatically from sales, purchases, payments and stock, so partners do not depend on spreadsheets. Tax rates and rules below are configurable; the exact treatment (regular GST or composition, rates for food versus court rental) must be confirmed with the shop's chartered accountant.
+Accounting modules
+Module
+What it does
+Chart of accounts
+Pre-built for a cafe plus sports venue: sales streams, COGS, rent, salaries, utilities, marketing, gateway fees, capital and drawings per partner
+Auto-posting
+Each bill, booking, purchase, refund, stock adjustment and payment creates journal entries with no manual typing
+Expenses
+Petty cash and bank expenses with category, bill photo, approver and payment mode, plus recurring expenses such as rent and electricity
+Payables
+Supplier bills, due dates, part payments, ageing report
+Receivables
+Corporate or event bookings paid later, with invoices and follow-up
+Bank and cash
+Bank book, cash book, reconciliation with gateway and bank statements
+Payroll (basic)
+Staff attendance, salary, advances, tips pool, with payslips
+GST
+Output tax by rate, input tax credit from purchases, HSN summary, data export for GSTR-1 and GSTR-3B filing by the accountant
+Fixed assets
+Court construction, equipment, coffee machine, with depreciation schedule
+Period closing
+Month-end lock so closed periods cannot be edited without partner approval
+Partner management
+• Partner register: name, share percentage, capital contributed, date joined, bank details.
+• Capital account per partner: contributions, drawings, loans to the business, and profit credited.
+• Profit-sharing engine: define share percentages and optional rules, for example salaried partner, interest on capital, or different shares for the cafe and the court. The system calculates each partner's share every month.
+• Drawings and withdrawals require approval by a set number of other partners, with a full trail.
+• Partner statement: a PDF per partner showing opening balance, contributions, withdrawals, profit share and closing balance.
+• Approval workflows: expenses above a limit, new supplier, price changes, large refunds, and stock write-offs can need approval from one or two partners through the panel or WhatsApp.
+• Entry or exit of a partner is handled as a dated event, so history remains correct.
+Financial reports
+• Profit and loss, balance sheet, cash flow, trial balance, and day book.
+• Profit by revenue stream: cafe counter, online orders, court bookings, equipment rental.
+• Cost of goods sold and gross margin by product category.
+• Budget against actual per month, and break-even view.
+• Scheduled monthly partner report by email and WhatsApp.
+• Export to Excel, PDF and Tally-compatible format for the external auditor.
+12. WhatsApp integration
+WhatsApp is the main customer and staff channel. It is integrated through the official WhatsApp Business Platform (Cloud API), either directly with Meta or through a provider such as Gupshup, Interakt, WATI or AiSensy. Unofficial tools that automate a personal WhatsApp account are not used, because they risk the number being banned.
+Automatic messages (transactional)
+Event
+Recipient
+Message content
+Order placed and paid
+Customer
+Order summary, pickup time, pickup code
+Order ready
+Customer
+Ready for pickup with code
+Order cancelled or refunded
+Customer
+Reason and refund timeline
+Court booking confirmed
+Customer
+Court, date, time, QR code, rules
+Court reminder
+Customer
+2 hours before, with reschedule link
+Court cancelled or slot released
+Customer
+Refund details, waitlist offer
+Receipt or invoice
+Customer
+PDF invoice link
+New online order
+Manager, bar
+Short alert as backup to the screen sound
+Low stock or expiry
+Manager
+Item list
+Day-end summary
+Partners, manager
+Sales, bookings, cash difference, top items
+Approval request
+Partners
+Approve or reject buttons for expenses and withdrawals
+Marketing messages (campaigns)
+• Audience segments: new customers, repeat customers, inactive for 30 days, court players, birthday this week.
+• Template builder with variables such as name and offer code, scheduled sending, and a daily cap to avoid spam.
+• Click-to-order links and coupon codes in messages, with conversion tracking back to orders.
+• Delivery, read and reply tracking, and opt-out handling.
+Two-way chat inbox
+• Customer replies land in an admin inbox, assignable to staff, with quick replies such as opening hours, menu link and court rates.
+• Click-to-WhatsApp button on the website opens a chat with a pre-filled message.
+• Optional menu bot: customers type a keyword to get the menu, track an order, or check court availability.
+Compliance and operating rules
+• Customers must opt in at checkout or on the booking form. Every marketing message offers a stop option.
+• Transactional and marketing messages use separate approved templates, and Meta approval is needed for each template before use.
+• Message charges are billed per conversation by the provider. Expected volume and cost are estimated in the cost section.
+• If WhatsApp fails, the system falls back to SMS or email for confirmations and logs the failure.
+13. Settings
+Settings let the owners change business rules without a developer. Changes are logged with who, when and the old value.
+Group
+Settings
+Business profile
+Shop name, logo, address, phone, email, GSTIN, FSSAI number, PAN, bank details, invoice footer and terms
+Timings
+Weekly opening hours, holidays, special days, last-order time, court hours
+Ordering
+Pickup slot length, orders per slot, drinks per slot, preparation time, advance days, pause ordering, pay-at-counter rules, minimum order
+Pickleball
+Courts, slot length, price bands, cancellation windows, hold time, grace time, deposit percentage
+Tax
+GST registration type, tax rates by category, HSN or SAC codes, inclusive or exclusive pricing, round-off rule, service charge
+Invoice
+Number series, prefix per financial year, bill layout, logo on receipt, QR code
+Payments
+Gateway keys, enabled modes, refund approval limit, settlement bank account
+Notifications
+WhatsApp templates, SMS and email sender, who receives which alert, quiet hours
+Users and roles
+Staff accounts, role permissions, PIN reset, device sign-outs, two-step verification
+Devices
+Printers, cash drawers, kitchen screens, tablets registered to the shop
+Loyalty
+Points rules, expiry, tiers, referral rewards
+Website
+Brand colours, fonts, favicon, social links, SEO defaults, cookie notice, analytics IDs
+Data and backups
+Backup schedule, export tools, data retention, audit log viewer
+Approvals
+Limits above which a partner must approve (expense, refund, withdrawal, discount)
+Setup wizard: first login walks the owner through business profile, taxes, menu import (CSV), court setup, staff, payment keys and a test order, so the shop can go live in a day.
+14. Database design
+PostgreSQL is the primary database. Every table carries id, created_at, updated_at, created_by and a branch_id (single value at launch, ready for a second outlet). Money is stored as integer paise, never as decimals or floats.
+Area
+Main tables
+Key relationships
+Identity
+users, roles, permissions, role_permissions, devices, sessions, audit_logs
+users to roles (many-to-many through role grants)
+Customers
+customers, addresses_billing (optional), loyalty_accounts, loyalty_transactions, consents
+customers to orders and bookings
+Catalogue
+categories, products, product_variants, modifier_groups, modifiers, product_modifier_groups, price_lists
+products to variants and modifiers
+Orders
+orders, order_items, order_item_modifiers, order_status_history, pickup_slots, kds_tickets
+order to items, to payments, to customer, to invoice
+Court booking
+courts, court_slots_rules, price_bands, bookings, booking_items, booking_status_history, waitlist, memberships, passes
+booking to court, customer, payment
+Billing
+invoices, invoice_lines, credit_notes, invoice_sequences, shifts, cash_movements
+invoice to order or booking, shift to cashier
+Payments
+payments, payment_attempts, refunds, gateway_events, settlements, settlement_lines
+payment to order or booking, refund to payment
+Inventory
+inventory_items, units, unit_conversions, recipes, recipe_lines, stock_ledger, batches, purchase_orders, purchase_lines, goods_receipts, suppliers, stock_counts, wastage
+recipe_lines to inventory_items, ledger to every movement
+Accounting
+accounts, journal_entries, journal_lines, expenses, expense_categories, bills_payable, bank_accounts, bank_transactions, tax_returns_data, fixed_assets, periods
+journal_lines to accounts, expense to journal entry
+Partners
+partners, partner_capital_transactions, profit_share_rules, profit_distributions, approvals
+partner to capital transactions and distributions
+Marketing
+campaigns, coupons, coupon_redemptions, banners, banner_clicks, segments
+campaign to coupons and banners
+Website CMS
+pages, page_versions, hero_slides, announcements, media_files, seo_meta
+page to versions
+Messaging
+whatsapp_templates, messages, message_events, conversations, opt_ins
+conversation to customer
+Settings
+settings, tax_rates, hsn_codes, notification_rules
+key-value with change history
+Design rules
+• Stock changes only through stock_ledger; the current quantity is a computed summary that is verified nightly.
+• Accounting changes only through journal_entries with balanced debit and credit lines; closed periods are locked.
+• Invoices, payments and journal entries are append-only. A mistake is corrected by a credit note or a reversing entry.
+• A unique constraint on court, date and slot prevents double booking even under simultaneous requests.
+• Soft delete (an archived flag) for products, customers and staff, so history stays intact.
+• Indexes on order status and time, booking date and court, and customer mobile number for fast lookups.
+• Daily automated backups with a tested restore, covered in Security.
+15. APIs and integrations
+The website, admin panel and POS all use one versioned REST API (/api/v1) secured by tokens. Live updates (new order alerts, kitchen screen, slot availability) use WebSockets or server-sent events.
+API groups
+Group
+Example endpoints
+Used by
+Auth
+POST /auth/otp/request, /auth/otp/verify, /auth/staff/login
+Website, admin, POS
+Catalogue
+GET /menu, GET /products/{id}, POST /admin/products
+Website, POS, admin
+Cart and orders
+POST /orders, GET /orders/{id}, PATCH /orders/{id}/status, POST /orders/{id}/cancel
+Website, POS, kitchen
+Pickup slots
+GET /pickup-slots?date=
+Website
+Courts
+GET /courts/availability?date=, POST /bookings, POST /bookings/{id}/cancel, POST /bookings/{id}/check-in
+Website, court desk
+Payments
+POST /payments/intent, POST /webhooks/payment, POST /refunds
+Website, POS, gateway
+POS
+POST /pos/bills, POST /pos/shifts/open, /close, POST /pos/sync (offline queue)
+POS
+Inventory
+GET /stock, POST /purchases, POST /stock-counts, POST /wastage
+Admin
+Accounting
+GET /reports/pnl, POST /expenses, GET /partners/{id}/statement
+Admin
+Marketing
+GET /banners/active, POST /campaigns, POST /coupons/validate
+Website, admin
+Messaging
+POST /webhooks/whatsapp, POST /messages/send
+Provider, admin
+Settings and CMS
+GET /settings/public, PUT /admin/settings, PUT /admin/pages/{id}
+Website, admin
+Third-party services
+• Payment gateway (Razorpay, Cashfree or PayU) for UPI, cards and refunds.
+• WhatsApp Business Platform for messages and templates.
+• SMS provider for OTP fallback (DLT-registered sender in India).
+• Email service (for example Amazon SES) for invoices and reports.
+• Google Maps for the location block, Google Analytics and Meta Pixel for marketing measurement.
+• Object storage and a CDN for images and videos.
+• Error monitoring (Sentry) and uptime monitoring.
+API standards: JSON, consistent error codes, pagination on all lists, rate limiting, idempotency keys on payment and order creation, and an OpenAPI document generated automatically for developers.
+16. UI/UX and responsive design
+The customer site feels warm and quick, with large food photography. The admin panel is dense and fast, built for daily work rather than decoration. Both share one design system so new screens look consistent.
+Design system
+• Colours: a warm coffee palette (espresso brown, cream, one accent such as terracotta or green for the court), with status colours for success, warning and error. Final colours come from the brand logo.
+• Type: one display font for headings and one clean sans-serif for body and numbers; minimum 16 px body text on mobile.
+• Components: buttons, cards, product tiles, slot chips, modals, toasts, data tables, filters, charts, empty and loading states, all in light mode and an optional dark mode for the admin panel.
+• Imagery: compressed WebP or AVIF images, lazy loading, and a fixed aspect ratio per placement so uploads never break layouts.
+Responsive breakpoints
+Screen
+Width
+Customer website
+Admin panel
+Phone
+320 to 599 px
+Single column, sticky bottom bar with Cart and Book, swipeable hero and categories
+Collapsible menu, cards instead of wide tables, approve and view tasks first
+Tablet
+600 to 1023 px
+Two-column menu, side cart drawer
+Icon sidebar, POS in landscape, kitchen display
+Laptop
+1024 to 1439 px
+Three or four product columns, sticky filters
+Full sidebar, tables with column chooser, split views
+Large desktop
+1440 px and above
+Centred container, larger hero
+Multi-widget dashboard
+Key customer screens
+1. Home: hero, quick action buttons, banner strip, best sellers, court highlight, hours and map.
+2. Menu: category tabs, search, product detail sheet with options, add to cart.
+3. Checkout: pickup slot chips, coupon, payment choice, order summary on one screen.
+4. Order status: progress steps, pickup code in large type, call and WhatsApp buttons.
+5. Court booking: date strip, court by time grid, price summary, pay button.
+Key admin screens: dashboard, live orders board, POS billing screen, kitchen display, court calendar (day and week views), product and recipe editor, stock ledger, purchase entry, expense entry, partner statements, campaign builder, banner manager, WhatsApp inbox, reports, settings.
+Experience principles
+• A customer should reach a paid order in under five taps from the home page.
+• The counter screen must work with gloves or wet hands: large targets, no hover-only actions.
+• Every list has search, filters, export and saved views.
+• Clear empty states, undo for destructive actions, and plain-language error messages.
+• Performance budget: largest content paint under 2.5 seconds on mid-range phones, and Lighthouse score above 90 for performance and accessibility.
+17. Security, backup and compliance
+The system holds customer phone numbers, payments and the partners' financial data, so security is designed in from the start.
+Application security
+• HTTPS everywhere, secure cookies, and modern password hashing (Argon2 or bcrypt).
+• Role-based access on every API call, checked on the server and not only hidden in the screen.
+• Optional two-step verification for admin, partner and accountant accounts, and mandatory for Super Admin.
+• Protection against common attacks: SQL injection, cross-site scripting, request forgery, brute-force login, and file-upload abuse. Rate limits on OTP and login.
+• Payment webhooks verified by signature. Card and UPI data never touch the shop's servers.
+• Audit log for logins, price changes, refunds, discounts, stock adjustments, role changes and data exports.
+• Secrets (gateway keys, WhatsApp tokens) kept in an encrypted secret store, never in code.
+Backup and recovery
+Item
+Policy
+Database backup
+Automated daily full backup plus point-in-time recovery, retained 30 days
+Files and images
+Versioned object storage with a copy in a second region
+Restore test
+Practised every quarter, with the result recorded
+Recovery targets
+Restore within 4 hours, no more than 15 minutes of data lost
+Monthly export
+Encrypted copy of ledgers and invoices delivered to the partners' nominated storage
+Compliance (India)
+• Digital Personal Data Protection Act, 2023: clear consent for contact and marketing, a privacy notice, customer data export and deletion on request, and a named contact for complaints. Obligations should be checked with a legal advisor.
+• GST: invoices with required fields, gapless numbering, credit notes, and records retained for the period the law prescribes.
+• FSSAI: licence number printed on the website footer and invoices.
+• WhatsApp and SMS: opt-in records, DLT registration for SMS senders, and approved templates.
+• Accessibility and consumer rules: transparent prices with taxes, and published cancellation and refund policy.
+Availability: target 99.5% monthly uptime for the website and ordering, with automatic restart, monitoring alerts to the owner by WhatsApp, and a status page.
+18. Tech stack, hosting and estimated cost
+The stack favours widely known tools, so the shop is never locked to one developer. All figures in the cost tables are approximate planning numbers from general experience, not quotes, and must be replaced with vendor and agency quotes before budgeting.
+Recommended stack
+Layer
+Choice
+Reason
+Customer website
+Next.js (React) with server rendering, PWA support
+Fast, search-friendly, installable
+Admin panel and POS
+React single-page app with offline storage (IndexedDB) and a service worker
+Works on tablets, keeps billing offline
+Backend API
+Node.js with NestJS, or Python with Django REST
+Structured, well supported
+Database
+PostgreSQL
+Reliable for money, stock and bookings
+Cache and queues
+Redis, with a job queue for messages, reports and sync
+Fast slot locking and background work
+Real-time
+WebSockets or server-sent events
+Live orders and kitchen screen
+File storage and CDN
+S3-compatible storage with a CDN
+Images and banners load quickly
+Hosting
+Cloud in the Mumbai region (AWS, Google Cloud or Azure) or a managed platform
+Low latency in India, data stays in the country
+Monitoring
+Sentry, uptime checks, log aggregation
+Faster fixes
+CI and delivery
+Git repository, automated tests and deployment, staging and production environments
+Safe releases
+Approximate one-time build cost (India, 2026)
+Phase
+Approximate range (INR)
+Phase 1: website, take-away ordering, payments, basic admin, POS
+6 to 10 lakh
+Phase 2: court booking, inventory with recipes, offline POS, kitchen screen
+5 to 8 lakh
+Phase 3: accounting, partner module, WhatsApp, campaigns, advanced reports
+5 to 8 lakh
+Design system, content setup, testing, training
+1.5 to 3 lakh
+Total
+17 to 29 lakh
+A smaller launch, with the core website, ordering, payments and simple POS only, can start much lower. Ready-made tools for POS or accounting can replace some modules if the budget is tight, at the cost of separate logins and manual data transfer.
+Approximate monthly running cost
+Item
+Approximate range (INR per month)
+Cloud hosting, database, storage, CDN
+5,000 to 15,000
+Payment gateway fees
+About 2% of online sales, plus GST on the fee
+WhatsApp conversation charges
+Depends on volume, often 2,000 to 10,000
+SMS, email, maps and monitoring
+1,000 to 3,000
+Maintenance and support retainer
+15,000 to 40,000
+19. Roadmap and delivery phases
+The build runs in four phases over roughly 28 to 32 weeks. The shop can open online ordering after phase 1 and does not have to wait for the whole system. Durations are planning estimates and depend on team size.
+Phase
+Weeks
+Deliverables
+Go-live gate
+0. Discovery and design
+1 to 4
+Confirmed requirements, brand kit, wireframes, clickable prototype, final tax and payment decisions
+Partners sign off prototype and scope
+1. Launch core
+5 to 12
+Responsive website with hero and banner manager, menu, take-away ordering, online payments, admin basics, POS with printing, kitchen screen, WhatsApp order messages
+Ten full test orders per payment mode, staff trained
+2. Court and inventory
+13 to 20
+Pickleball booking, court calendar, memberships and passes, inventory with recipes, purchases, wastage, offline POS
+A week of live court bookings with no double booking
+3. Finance and growth
+21 to 28
+Accounting, GST reports, partner capital and profit share, approvals, campaigns, coupons, loyalty, WhatsApp campaigns and inbox, advanced reports
+Month-end close done in the system and checked by the accountant
+4. Hardening and handover
+29 to 32
+Security review, load test, backup restore test, documentation, training videos, support plan
+Written sign-off from all partners
+Testing approach
+• Automated unit and API tests for billing, tax, stock deduction, slot locking and payment webhooks.
+• End-to-end tests of the full customer journeys on real phones across Android and iOS browsers.
+• User acceptance testing by the cashier, barista, court manager and one partner using real menu data.
+• Pilot week with staff using the POS alongside the old method, comparing totals every evening.
+• Load test for the lunch and evening peaks, and an offline-mode drill by switching the internet off.
+Deployment: separate staging and production environments, release on a schedule outside busy hours, one-click rollback, and a hyper-care period of two weeks after each go-live with same-day fixes.
+20. Assumptions and open questions
+The specification assumes a single outlet in India, rupee pricing, and the take-away-only model. These points change the design or cost and should be settled with all partners before phase 0 ends.
+Assumptions
+• One outlet, one pickleball venue, with the number of courts to be confirmed.
+• English at launch, with Telugu or Hindi text added later if wanted.
+• The shop already holds, or will obtain, a GSTIN and an FSSAI licence before go-live.
+• Staff use Android tablets or a Windows PC at the counter, with a thermal printer.

@@ -1,0 +1,18 @@
+{
+  "name": "lost-origin",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "install:all": "node scripts/project.mjs install",
+    "setup:local": "node --experimental-strip-types scripts/setup-local.mjs",
+    "build": "node scripts/project.mjs build",
+    "typecheck": "node scripts/project.mjs typecheck",
+    "test": "node scripts/project.mjs test",
+    "db:migrate": "node scripts/project.mjs migrate",
+    "dev": "node scripts/project.mjs dev"
+  }
+}
