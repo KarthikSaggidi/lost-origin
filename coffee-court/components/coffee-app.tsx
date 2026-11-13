@@ -74,6 +74,14 @@ import CustomerCourts from "./customer-courts";
 import HomeSections from "./home-sections";
 import CustomerMenu from "./customer-menu";
 import CartBar from "./cart-bar";
+import usePosBills from "./use-pos-bills";
+import PosVoice from "./pos-voice";
+import {
+  billName,
+  type PosBill,
+  type PosFields,
+  type PosWorkspace,
+} from "../lib/pos-bills";
 import { parseIngredients, productIngredients } from "../lib/product-details";
 import AdminCourts from "./admin-courts";
 import BookingNotifications from "./booking-notifications";
@@ -324,12 +332,21 @@ export default function CoffeeApp({
     [search, setSearch] = useState(""),
     [notifications, setNotifications] = useState(false),
     [offline, setOffline] = useState(false);
-  const [modal, setModal] = useState<{ type: string; value?: any } | null>(
-      null,
-    ),
-    [cart, setCart] = useState<Item[]>([]),
+  const [modal, setModal] = useState<{
+      type: string;
+      value?: any;
+      posBillId?: string;
+    } | null>(null),
+    [customerCart, setCustomerCart] = useState<Item[]>([]),
     [cartOpen, setCartOpen] = useState(false),
     [orderSuccess, setOrderSuccess] = useState<Order | null>(null);
+  const pos = usePosBills(
+    surface === "admin" && loaded && Boolean(data.access?.admin),
+    data.access?.adminEmail || "",
+  );
+  const cart = surface === "admin" ? pos.active?.items || [] : customerCart;
+  const modalRef = useRef(modal);
+  modalRef.current = modal;
   const [queued, setQueued] = useState(0),
     [syncing, setSyncing] = useState(false);
   const syncingRef = useRef(false);
@@ -377,11 +394,13 @@ export default function CoffeeApp({
       } catch (e: any) {
         const cache = await cachedCatalogue(surface).catch(() => undefined);
         if (cache && !navigator.onLine) {
-          setData({
+          setData((current) => ({
             ...emptyState,
             ...cache,
+            // Keep the verified account for this open tab's offline workspace.
+            ...(surface === "admin" ? { access: current.access } : {}),
             orders: pending.map((b) => b.order),
-          });
+          }));
           setLoaded(true);
           setError("");
         } else setError(e.message);
@@ -510,7 +529,7 @@ export default function CoffeeApp({
   }, [load, offline]);
   useEffect(() => {
     if (offline) return;
-    setCart((current) => {
+    setCustomerCart((current) => {
       const next = current.map((item) => {
         const p = data.products.find((p) => p.id === item.id);
         const price = p && variantPrice(p, item.variant);
@@ -519,6 +538,9 @@ export default function CoffeeApp({
       return next.some((i, n) => i !== current[n]) ? next : current;
     });
   }, [data.products, offline]);
+  useEffect(() => {
+    if (!offline && pos.workspace) pos.reprice(data.products);
+  }, [data.products, offline, Boolean(pos.workspace), pos.reprice]);
   useEffect(() => {
     if (!toast) return;
     const timer = setTimeout(() => setToast(""), 4500);
@@ -609,7 +631,19 @@ export default function CoffeeApp({
   const customerView = surface === "website";
   useScrollLock(sidebar || mobileMenu || notifications || !!search);
   const addCart = (item: Item) => {
-    setCart((c) => {
+    if (surface === "admin") {
+      try {
+        if (!modal?.posBillId)
+          throw new Error("Select a bill before adding an item.");
+        pos.addItems(modal.posBillId, [item]);
+        setModal(null);
+        setToast(`${item.name} added to ${billName(pos.get(modal.posBillId))}`);
+      } catch (e: any) {
+        setToast(e.message);
+      }
+      return;
+    }
+    setCustomerCart((c) => {
       const i = c.findIndex(
         (x) =>
           x.id === item.id &&
@@ -630,7 +664,7 @@ export default function CoffeeApp({
     if (!customerView) setToast(`${item.name} added to your order`);
   };
   const updateQuantity = (index: number, delta: number) =>
-    setCart((c) =>
+    setCustomerCart((c) =>
       c
         .map((x, n) =>
           n === index ? { ...x, quantity: x.quantity + delta } : x,
@@ -638,7 +672,84 @@ export default function CoffeeApp({
         .filter((x) => x.quantity > 0),
     );
   const openCheckout = () => {
-    if (cart.length) setModal({ type: "checkout" });
+    if (cart.length)
+      setModal({
+        type: "checkout",
+        ...(surface === "admin" ? { posBillId: pos.active?.id } : {}),
+      });
+  };
+  const posAction = (run: () => unknown) => {
+    try {
+      run();
+    } catch (e: any) {
+      setToast(e.message);
+    }
+  };
+  const submitCounter = async (id: string) => {
+    const bill = pos.get(id);
+    if (!navigator.onLine && bill.fields.paymentMode === "Card")
+      throw new Error(
+        "Reconnect before billing a card payment, or choose Cash / UPI.",
+      );
+    const attempt = pos.begin(id);
+    const lookup = async (): Promise<Order | null> => {
+      const queuedOrder = (await queuedBills()).find(
+        (q) => q.requestKey === attempt.payload.requestKey,
+      )?.order;
+      if (queuedOrder) return queuedOrder;
+      if (!navigator.onLine) return null;
+      const response = await authFetch(
+        `/api/v1/pos?requestKey=${encodeURIComponent(attempt.payload.requestKey)}`,
+        { cache: "no-store" },
+      );
+      if (!response.ok)
+        throw new Error(
+          "Could not check the saved billing reference. Reconnect and retry this bill.",
+        );
+      return ((await response.json()) as { order: Order | null }).order;
+    };
+    try {
+      if (attempt.recover) {
+        const existing = await lookup();
+        if (existing) {
+          void load();
+          return existing;
+        }
+      }
+      if (!navigator.onLine) {
+        const order = await queueBill(attempt.payload, business.taxRate);
+        await load();
+        return order;
+      }
+      const response = await authFetch("/api/v1/state", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "order", ...attempt.payload }),
+      });
+      const result: any = await response.json();
+      if (response.status === 401) window.location.replace("/admin/login");
+      if (!response.ok)
+        throw Object.assign(new Error(result.error || "Billing failed."), {
+          status: response.status,
+        });
+      await load();
+      return result as Order;
+    } catch (e: any) {
+      try {
+        const existing = await lookup();
+        if (existing) {
+          void load();
+          return existing;
+        }
+      } catch {}
+      const definitive = [400, 401, 403, 422].includes(e.status);
+      pos.fail(id, definitive);
+      throw new Error(
+        definitive
+          ? e.message
+          : "The billing result could not be confirmed. This bill is locked. Retry to recover the same billing reference; you can work on another bill meanwhile.",
+      );
+    }
   };
   const openOrder = (o: Order) => setModal({ type: "order", value: o });
   const pageFilters =
@@ -989,16 +1100,50 @@ export default function CoffeeApp({
             {view === "overview" && <Overview {...common} />}
             {view === "orders" && <OrdersPage {...common} />}
             {view === "kitchen" && <KitchenBoard {...common} />}
-            {view === "pos" && (
-              <POS
-                data={data}
-                cart={cart}
-                add={(p) => setModal({ type: "modifier", value: p })}
-                updateQuantity={updateQuantity}
-                checkout={openCheckout}
-                clear={() => setCart([])}
-              />
-            )}
+            {view === "pos" &&
+              (pos.workspace && pos.active ? (
+                <POS
+                  data={data}
+                  cart={cart}
+                  workspace={pos.workspace}
+                  bill={pos.active}
+                  notice={pos.notice}
+                  blocked={
+                    Boolean(modal) ||
+                    sidebar ||
+                    notifications ||
+                    Boolean(search)
+                  }
+                  offline={offline}
+                  newBill={() => posAction(pos.newBill)}
+                  selectBill={(id) => posAction(() => pos.select(id))}
+                  closeBill={(id) => posAction(() => pos.close(id))}
+                  rename={(label) =>
+                    posAction(() => pos.rename(pos.active!.id, label))
+                  }
+                  voiceAdd={(items, id) => {
+                    if (pos.workspace?.activeId !== id)
+                      throw new Error(
+                        "The active bill changed. Repeat the command for this bill.",
+                      );
+                    pos.addItems(id, items);
+                  }}
+                  add={(p) =>
+                    setModal({
+                      type: "modifier",
+                      value: p,
+                      posBillId: pos.active!.id,
+                    })
+                  }
+                  updateQuantity={(n, d) =>
+                    posAction(() => pos.adjust(pos.active!.id, n, d))
+                  }
+                  checkout={openCheckout}
+                  clear={() => posAction(() => pos.clear(pos.active!.id))}
+                />
+              ) : (
+                <p className="notice">Opening the billing workspace…</p>
+              ))}
             {view === "courts" && (
               <AdminCourts
                 {...common}
@@ -1103,11 +1248,11 @@ export default function CoffeeApp({
           view={view}
           blocked={Boolean(
             modal ||
-              cartOpen ||
-              mobileMenu ||
-              notifications ||
-              search ||
-              offline,
+            cartOpen ||
+            mobileMenu ||
+            notifications ||
+            search ||
+            offline,
           )}
           navigate={navigate}
         />
@@ -1304,16 +1449,51 @@ export default function CoffeeApp({
       )}
       {modal?.type === "checkout" && (
         <Checkout
-          cart={cart}
+          key={modal.posBillId || "website-checkout"}
+          cart={
+            modal.posBillId
+              ? pos.workspace?.bills.find((b) => b.id === modal.posBillId)
+                  ?.items || []
+              : customerCart
+          }
           business={business}
-          source={view === "pos" ? "Counter" : "Online"}
+          source={modal.posBillId ? "Counter" : "Online"}
+          bill={
+            modal.posBillId
+              ? pos.workspace?.bills.find((b) => b.id === modal.posBillId)
+              : undefined
+          }
+          fields={(patch: Partial<PosFields>) =>
+            posAction(() => pos.fields(modal.posBillId!, patch))
+          }
+          counterSubmit={() => submitCounter(modal.posBillId!)}
           customer={data.access?.customer}
           act={act}
           busy={busy}
           close={() => setModal(null)}
-          update={updateQuantity}
+          update={
+            modal.posBillId
+              ? (n: number, d: number) =>
+                  posAction(() => pos.adjust(modal.posBillId!, n, d))
+              : updateQuantity
+          }
           done={(o: Order) => {
-            setCart([]);
+            if (modal.posBillId) {
+              const id = modal.posBillId;
+              pos.complete(id);
+              setToast(
+                o.status === "Queued offline"
+                  ? "Offline bill saved on this device."
+                  : `Bill ${o.id} created.`,
+              );
+              if (
+                modalRef.current?.type === "checkout" &&
+                modalRef.current.posBillId === id
+              )
+                setModal({ type: "receipt", value: o });
+              return;
+            }
+            setCustomerCart([]);
             setModal(null);
             setOrderSuccess(o);
             setModal(
@@ -2390,9 +2570,11 @@ function Kitchen({ data, mutate, busy, openOrder }: Common) {
 function CartItems({
   cart,
   update,
+  disabled = false,
 }: {
   cart: Item[];
   update: (n: number, d: number) => void;
+  disabled?: boolean;
 }) {
   return (
     <div className="cart-items">
@@ -2419,6 +2601,7 @@ function CartItems({
               <div className="quantity-stepper">
                 <button
                   aria-label={`Remove one ${i.name}`}
+                  disabled={disabled}
                   onClick={() => update(n, -1)}
                 >
                   <Minus size={13} />
@@ -2427,7 +2610,7 @@ function CartItems({
                 <button
                   aria-label={`Add one ${i.name}`}
                   onClick={() => update(n, 1)}
-                  disabled={i.quantity >= 20}
+                  disabled={disabled || i.quantity >= 20}
                 >
                   <Plus size={13} />
                 </button>
@@ -2447,6 +2630,16 @@ function POS({
   updateQuantity,
   checkout,
   clear,
+  workspace,
+  bill,
+  notice,
+  blocked,
+  offline,
+  newBill,
+  selectBill,
+  closeBill,
+  rename,
+  voiceAdd,
 }: {
   data: State;
   cart: Item[];
@@ -2454,6 +2647,16 @@ function POS({
   updateQuantity: (n: number, d: number) => void;
   checkout: () => void;
   clear: () => void;
+  workspace: PosWorkspace;
+  bill: PosBill;
+  notice: string;
+  blocked: boolean;
+  offline: boolean;
+  newBill: () => void;
+  selectBill: (id: string) => void;
+  closeBill: (id: string) => void;
+  rename: (label: string) => void;
+  voiceAdd: (items: Item[], id: string) => void;
 }) {
   const [category, setCategory] = useState("All items"),
     [query, setQuery] = useState("");
@@ -2463,6 +2666,12 @@ function POS({
       (category === "All items" || p.category === category) &&
       p.name.toLowerCase().includes(query.toLowerCase()),
   );
+  const locked = bill.status !== "draft";
+  const billTotal = calculate(
+    cart,
+    bill.fields.coupon,
+    data.settings.business.taxRate,
+  ).total;
   return (
     <>
       <PageHeading
@@ -2471,9 +2680,64 @@ function POS({
       >
         <span className="badge green">
           <span />
-          Counter · Online
+          Counter · {offline ? "Offline" : "Online"}
         </span>
       </PageHeading>
+      {notice && (
+        <p className="notice" role="status">
+          {notice}
+        </p>
+      )}
+      <div className="pos-bill-workspace">
+        <div
+          className="pos-bill-tabs"
+          role="tablist"
+          aria-label="Open POS bills"
+        >
+          {workspace.bills.map((b) => (
+            <button
+              key={b.id}
+              type="button"
+              role="tab"
+              aria-selected={bill.id === b.id}
+              className={bill.id === b.id ? "active" : ""}
+              onClick={() => selectBill(b.id)}
+            >
+              <Receipt size={15} />
+              <span>
+                <strong>
+                  {billName(b)}
+                  {b.label ? ` · ${b.label}` : ""}
+                </strong>
+                <small>
+                  {b.status === "submitting"
+                    ? "Creating bill…"
+                    : b.status === "uncertain"
+                      ? "Needs recovery"
+                      : `${b.items.reduce((s, i) => s + i.quantity, 0)} items · ${money(calculate(b.items, b.fields.coupon, data.settings.business.taxRate).total)}`}
+                </small>
+              </span>
+            </button>
+          ))}
+        </div>
+        <button
+          className="btn secondary small"
+          disabled={workspace.bills.length >= 20}
+          onClick={newBill}
+        >
+          <Plus size={15} />
+          New bill
+        </button>
+      </div>
+      <PosVoice
+        key={bill.id}
+        billId={bill.id}
+        products={data.products}
+        inventory={data.inventory}
+        cart={bill.items}
+        blocked={blocked || locked}
+        add={voiceAdd}
+      />
       <div className="pos-layout">
         <section>
           <div className="search-input pos-search">
@@ -2504,7 +2768,7 @@ function POS({
           <div className="pos-products">
             {rows.map((p) => (
               <button
-                disabled={!available(p, data.inventory)}
+                disabled={locked || !available(p, data.inventory)}
                 className="pos-product"
                 key={p.id}
                 onClick={() => add(p)}
@@ -2530,50 +2794,121 @@ function POS({
         </section>
         <aside className="panel pos-ticket">
           <div className="panel-heading">
-            <h2>Current order</h2>
+            <h2>{billName(bill)}</h2>
             <button
-              disabled={!cart.length}
+              disabled={
+                locked ||
+                (!cart.length &&
+                  !bill.fields.customer &&
+                  !bill.fields.phone &&
+                  !bill.fields.notes &&
+                  !bill.fields.coupon)
+              }
               className="text-btn"
               onClick={clear}
             >
               Clear
             </button>
           </div>
+          <div className="pos-bill-label">
+            <label htmlFor="pos-bill-label">Bill label</label>
+            <input
+              id="pos-bill-label"
+              placeholder="Customer or table (optional)"
+              value={bill.label}
+              maxLength={40}
+              disabled={locked}
+              onChange={(e) => rename(e.target.value)}
+            />
+            <button
+              type="button"
+              className="text-btn"
+              disabled={
+                locked ||
+                !!cart.length ||
+                !!bill.fields.customer ||
+                !!bill.fields.phone ||
+                !!bill.fields.notes
+              }
+              title="Clear a draft before closing it"
+              onClick={() => closeBill(bill.id)}
+            >
+              <X size={14} />
+              Close bill
+            </button>
+          </div>
+          {locked && (
+            <p className="notice" role="status">
+              {bill.status === "submitting"
+                ? "Creating this bill. You can switch to another customer."
+                : "Billing result needs checking. Recover this bill before making changes."}
+            </p>
+          )}
           <div className="ticket-source">
             <Monitor size={14} />
-            Counter takeaway<span>New bill</span>
+            Counter takeaway
+            <span>{bill.fields.customer || "Instant bill"}</span>
           </div>
-          <CartItems cart={cart} update={updateQuantity} />
+          <CartItems cart={cart} update={updateQuantity} disabled={locked} />
           <div className="pos-totals">
             <div>
               <span>Subtotal</span>
-              <b>{money(calculate(cart, "").subtotal)}</b>
+              <b>{money(calculate(cart, bill.fields.coupon).subtotal)}</b>
             </div>
             <div>
               <span>Estimated tax ({data.settings.business.taxRate}%)</span>
               <span>
-                {money(calculate(cart, "", data.settings.business.taxRate).tax)}
+                {money(
+                  calculate(
+                    cart,
+                    bill.fields.coupon,
+                    data.settings.business.taxRate,
+                  ).tax,
+                )}
               </span>
             </div>
             <div className="total-line">
               <span>Total</span>
               <b>
                 {money(
-                  calculate(cart, "", data.settings.business.taxRate).total,
+                  calculate(
+                    cart,
+                    bill.fields.coupon,
+                    data.settings.business.taxRate,
+                  ).total,
                 )}
               </b>
             </div>
             <button
               className="btn primary full"
-              disabled={!cart.length}
+              disabled={!cart.length || bill.status === "submitting"}
               onClick={checkout}
             >
-              Continue to payment <ArrowRight size={16} />
+              {bill.status === "uncertain"
+                ? "Recover bill"
+                : "Continue to payment"}{" "}
+              <ArrowRight size={16} />
             </button>
             <p className="micro-copy">Demo billing · no money is collected</p>
           </div>
         </aside>
       </div>
+      {!!cart.length && (
+        <div className="pos-mobile-bill-bar">
+          <div>
+            <strong>{billName(bill)}</strong>
+            <span>{money(billTotal)} · incl. tax</span>
+          </div>
+          <button
+            className="btn primary"
+            disabled={bill.status === "submitting"}
+            onClick={checkout}
+          >
+            {bill.status === "uncertain" ? "Recover bill" : "Review bill"}
+            <ArrowRight size={16} />
+          </button>
+        </div>
+      )}
     </>
   );
 }
@@ -2717,6 +3052,9 @@ function Checkout({
   update,
   done,
   customer,
+  bill,
+  fields,
+  counterSubmit,
 }: any) {
   const instant = source === "Counter";
   const slots = instant
@@ -2727,40 +3065,55 @@ function Checkout({
         business.closeTime,
       );
   const [pickup, setPickup] = useState(slots[0] || ""),
-    [coupon, setCoupon] = useState(""),
-    [payment, setPayment] = useState(source === "Counter" ? "Cash" : "UPI"),
+    [websiteCoupon, setCoupon] = useState(""),
+    [websitePayment, setPayment] = useState("UPI"),
     [formError, setFormError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
+  const locked = Boolean(bill && bill.status !== "draft");
+  const working = instant
+    ? submitting || bill?.status === "submitting"
+    : busy || submitting;
+  const coupon = instant ? bill?.fields.coupon || "" : websiteCoupon;
+  const payment = instant ? bill?.fields.paymentMode || "Cash" : websitePayment;
   const key = useRef(crypto.randomUUID());
   const totals = calculate(cart, coupon, business.taxRate);
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (!cart.length) return;
+    if (!cart.length || submittingRef.current || working) return;
+    submittingRef.current = true;
+    setSubmitting(true);
     setFormError("");
     const f = new FormData(e.currentTarget);
     try {
-      const result = await act("order", {
-        customer: f.get("customer") || "Walk-in customer",
-        phone: f.get("phone") || "",
-        email: f.get("email") || "",
-        marketingOptIn: f.get("marketingOptIn") === "on",
-        items: cart,
-        ...(instant ? {} : { pickupAt: pickup }),
-        source,
-        paymentMode: payment,
-        notes: f.get("notes") || "",
-        coupon,
-        requestKey: key.current,
-      });
+      const result = instant
+        ? await counterSubmit()
+        : await act("order", {
+            customer: f.get("customer") || "Walk-in customer",
+            phone: f.get("phone") || "",
+            email: f.get("email") || "",
+            marketingOptIn: f.get("marketingOptIn") === "on",
+            items: cart,
+            ...(instant ? {} : { pickupAt: pickup }),
+            source,
+            paymentMode: payment,
+            notes: f.get("notes") || "",
+            coupon,
+            requestKey: key.current,
+          });
       done(result);
     } catch (e: any) {
       setFormError(e.message);
+    } finally {
+      submittingRef.current = false;
+      setSubmitting(false);
     }
   }
   return (
     <Modal
       title={
         source === "Counter"
-          ? "Instant counter bill"
+          ? `${bill ? billName(bill) : "Counter"} · instant billing`
           : "Your next good coffee awaits."
       }
       close={close}
@@ -2768,6 +3121,21 @@ function Checkout({
     >
       <form onSubmit={submit} className="checkout-layout">
         <div>
+          {instant && (
+            <>
+              <button type="button" className="text-btn" onClick={close}>
+                <ChevronLeft size={15} />
+                Back to open bills
+              </button>
+              {locked && (
+                <p className="notice">
+                  {bill.status === "uncertain"
+                    ? "This attempt is locked. Retry checks and reuses its original billing reference."
+                    : "Creating this bill. You can return to open bills while it finishes."}
+                </p>
+              )}
+            </>
+          )}
           <div className="form-section-title">
             <span>01</span>
             {instant ? "Customer (optional)" : "Your details"}
@@ -2779,11 +3147,15 @@ function Checkout({
                 required={!instant}
                 minLength={2}
                 placeholder="Your name"
-                defaultValue={
-                  source === "Counter"
-                    ? "Walk-in customer"
-                    : customer?.name || ""
-                }
+                maxLength={80}
+                {...(instant
+                  ? {
+                      value: bill?.fields.customer || "",
+                      disabled: locked,
+                      onChange: (e: React.ChangeEvent<HTMLInputElement>) =>
+                        fields({ customer: e.target.value }),
+                    }
+                  : { defaultValue: customer?.name || "" })}
               />
             </Field>
             <Field
@@ -2793,7 +3165,14 @@ function Checkout({
                 <span>+91</span>
                 <input
                   name="phone"
-                  defaultValue={!instant ? customer?.phone || "" : ""}
+                  {...(instant
+                    ? {
+                        value: bill?.fields.phone || "",
+                        disabled: locked,
+                        onChange: (e: React.ChangeEvent<HTMLInputElement>) =>
+                          fields({ phone: e.target.value }),
+                      }
+                    : { defaultValue: customer?.phone || "" })}
                   readOnly={!instant && Boolean(customer?.phone)}
                   aria-label="Mobile number"
                   required={!instant}
@@ -2847,6 +3226,14 @@ function Checkout({
               placeholder="A little less ice? Let us know."
               rows={2}
               maxLength={500}
+              {...(instant
+                ? {
+                    value: bill?.fields.notes || "",
+                    disabled: locked,
+                    onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) =>
+                      fields({ notes: e.target.value }),
+                  }
+                : {})}
             />
           </Field>
           <div className="form-section-title">
@@ -2862,7 +3249,10 @@ function Checkout({
                 key={p}
                 type="button"
                 className={payment === p ? "chosen" : ""}
-                onClick={() => setPayment(p)}
+                disabled={instant && locked}
+                onClick={() =>
+                  instant ? fields({ paymentMode: p }) : setPayment(p)
+                }
               >
                 {p === "Cash" ? <Wallet size={18} /> : <CreditCard size={18} />}
                 <span>{p}</span>
@@ -2880,12 +3270,18 @@ function Checkout({
         </div>
         <div className="checkout-summary">
           <h3>A bag of good things</h3>
-          <CartItems cart={cart} update={update} />
+          <CartItems cart={cart} update={update} disabled={locked || working} />
           <Field label="Have a little perk?">
             <input
               placeholder="Coupon code · FIRSTBREW"
               value={coupon}
-              onChange={(e) => setCoupon(e.target.value.toUpperCase())}
+              maxLength={30}
+              disabled={instant && locked}
+              onChange={(e) =>
+                instant
+                  ? fields({ coupon: e.target.value.toUpperCase() })
+                  : setCoupon(e.target.value.toUpperCase())
+              }
             />
           </Field>
           <div className="summary-lines">
@@ -2916,14 +3312,16 @@ function Checkout({
           <button
             className="btn primary full"
             type="submit"
-            disabled={busy || !cart.length}
+            disabled={working || !cart.length}
           >
-            {busy
+            {working
               ? instant
                 ? "Creating bill…"
                 : "Placing your order…"
               : instant
-                ? "Bill & print"
+                ? bill?.status === "uncertain"
+                  ? "Recover original bill"
+                  : "Bill & print"
                 : "Place demo order"}
             <ArrowRight size={16} />
           </button>

@@ -16805,6 +16805,304 @@ textarea::placeholder {
     transform: translateX(0);
   }
 }
+.pos-bill-workspace {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 16px;
+  min-width: 0;
+}
+.pos-mobile-bill-bar {
+  display: none;
+}
+.pos-bill-tabs {
+  display: flex;
+  gap: 8px;
+  flex: 1;
+  overflow: auto;
+  padding: 3px 2px 8px;
+  min-width: 0;
+  scrollbar-width: thin;
+}
+.pos-bill-tabs > button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-shrink: 0;
+  max-width: 250px;
+  text-align: left;
+  border: 1px solid #e4ded4;
+  background: #fffdf9;
+  border-radius: 12px;
+  padding: 10px 14px;
+  color: #625c54;
+}
+.pos-bill-tabs > button.active {
+  border-color: #344930;
+  background: #edf2e9;
+  color: #233c24;
+  box-shadow: 0 2px 5px #263b2110;
+}
+.pos-bill-tabs strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+}
+.pos-bill-tabs small {
+  display: block;
+  font-size: 12px;
+  margin-top: 4px;
+}
+.pos-bill-workspace > button {
+  flex-shrink: 0;
+}
+.pos-bill-label {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding: 0 20px 15px;
+}
+.pos-bill-label > label {
+  font-size: 12px;
+  color: #6c665e;
+  width: 100%;
+}
+.pos-bill-label > input {
+  min-width: 0;
+  width: 100%;
+  font: inherit;
+  font-size: 14px;
+  border: 1px solid #e5dfd7;
+  border-radius: 8px;
+  padding: 9px 11px;
+  background: #fffdfa;
+}
+.pos-bill-label .text-btn {
+  font-size: 12px;
+}
+.pos-ticket > .notice {
+  margin: 0 18px 12px;
+  font-size: 13px;
+}
+.pos-voice {
+  border: 1px solid #dfdfd4;
+  background: linear-gradient(110deg, #f5f7f0, #fffdfa);
+  border-radius: 16px;
+  padding: 15px 18px;
+  margin-bottom: 22px;
+  min-width: 0;
+}
+.pos-voice-heading,
+.pos-voice-heading > div {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.pos-voice-heading {
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+.pos-voice-heading strong {
+  font-size: 15px;
+}
+.voice-state {
+  font-size: 12px;
+  color: #736c62;
+}
+.voice-state.listening {
+  color: #266333;
+}
+.voice-state.listening::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  background: #368045;
+  border-radius: 50%;
+  margin-right: 6px;
+}
+.voice-toggle {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  border: 1px solid #c8d4bf;
+  border-radius: 20px;
+  background: white;
+  color: #344d2c;
+  font: inherit;
+  font-size: 13px;
+  padding: 8px 12px;
+}
+.voice-toggle[aria-checked="true"] {
+  background: #2c4726;
+  color: #fff;
+  border-color: #2c4726;
+}
+.voice-command-form {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+.voice-command-form input {
+  min-width: 0;
+  flex: 1;
+  background: #fff;
+  border: 1px solid #dddcd2;
+  border-radius: 9px;
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 14px;
+}
+.voice-command-form .btn {
+  flex-shrink: 0;
+}
+.voice-listen-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 9px;
+}
+.voice-listen-row > p {
+  font-size: 13px;
+  color: #686758;
+  line-height: 1.6;
+  margin: 0;
+}
+.voice-listen-row > button {
+  flex-shrink: 0;
+}
+.voice-feedback,
+.voice-transcript {
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 9px 0 0;
+  color: #344d2c;
+  overflow-wrap: anywhere;
+}
+.voice-transcript {
+  color: #787468;
+}
+.voice-privacy {
+  display: block;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #777467;
+  margin-top: 9px;
+}
+.voice-choices {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-top: 13px;
+}
+.voice-choices > label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}
+.voice-choices select {
+  font: inherit;
+  border: 1px solid #d5d8cd;
+  border-radius: 8px;
+  background: white;
+  padding: 8px;
+}
+.voice-choices > div {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+}
+.pos-voice button:focus-visible,
+.pos-bill-workspace button:focus-visible {
+  outline: 2px solid #567343;
+  outline-offset: 3px;
+}
+@media (max-width: 700px) {
+  .pos-mobile-bill-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    position: fixed;
+    bottom: 12px;
+    left: 16px;
+    right: 16px;
+    z-index: 50;
+    background: #fffdf8;
+    border: 1px solid #d5dccd;
+    box-shadow: 0 4px 24px #293d2420;
+    padding: 10px 12px;
+    border-radius: 14px;
+  }
+  .pos-mobile-bill-bar strong,
+  .pos-mobile-bill-bar span {
+    display: block;
+    font-size: 13px;
+  }
+  .pos-mobile-bill-bar span {
+    font-size: 12px;
+    color: #686255;
+    margin-top: 5px;
+  }
+  .pos-mobile-bill-bar .btn {
+    font-size: 13px;
+    padding: 11px 14px;
+  }
+  .pos-layout {
+    margin-bottom: 95px;
+  }
+  .pos-bill-workspace {
+    gap: 7px;
+    align-items: stretch;
+  }
+  .pos-bill-workspace > button {
+    font-size: 12px;
+    padding: 7px 10px;
+    align-self: center;
+  }
+  .pos-bill-tabs > button {
+    padding: 9px 11px;
+    max-width: 190px;
+  }
+  .pos-voice {
+    padding: 13px 12px;
+  }
+  .pos-voice-heading {
+    gap: 8px;
+  }
+  .pos-voice-heading > div {
+    gap: 7px;
+    flex-wrap: wrap;
+  }
+  .pos-voice-heading strong {
+    font-size: 14px;
+  }
+  .voice-toggle {
+    font-size: 12px;
+    padding: 7px 10px;
+  }
+  .voice-listen-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .voice-command-form input {
+    font-size: 16px;
+    width: 0;
+  }
+  .voice-command-form .btn {
+    padding: 9px;
+  }
+  .voice-command-form .btn span {
+    display: none;
+  }
+  .voice-choices {
+    flex-direction: column;
+  }
+}
 @media (max-width: 700px) {
   .booking-notification-controls {
     gap: 7px;
