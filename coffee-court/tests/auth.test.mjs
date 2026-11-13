@@ -102,6 +102,8 @@ test("customer responses exclude admin data and other customers records while ke
     expenses: [{}],
     auditLogs: [{}],
     registrations: [{ phone: "secret" }],
+    notifications: [{ data: { phone: "admin-only-booking" } }],
+    notificationUnread: 1,
     documents: [
       { type: "message", data: { phone: "secret" } },
       { type: "popupCampaign", data: { title: "Public popup" } },
@@ -117,6 +119,8 @@ test("customer responses exclude admin data and other customers records while ke
   };
   const guest = customerState(data);
   assert.equal(guest.orders.length, 0);
+  assert.deepEqual(guest.notifications, []);
+  assert.equal(guest.notificationUnread, 0);
   assert.deepEqual(guest.inventory, []);
   assert.deepEqual(guest.products[0].recipe, {});
   assert.equal(guest.products[0].stockAvailable, true);

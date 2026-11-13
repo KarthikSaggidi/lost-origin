@@ -97,6 +97,8 @@ export type Expense = {
 };
 export type JournalLine = { account: string; debit: number; credit: number };
 export type State = {
+  notifications?: import("./booking-notifications").BookingNotification[];
+  notificationUnread?: number;
   notificationLogs?: {
     id: string;
     channel: string;

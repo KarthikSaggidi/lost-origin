@@ -1,4 +1,6 @@
 import { getDb } from "../../../../db";
+import { and, inArray, isNull, desc } from "drizzle-orm";
+import { websiteBookingNotification } from "../../../../lib/booking-notifications";
 import {
   getState,
   seed,
@@ -123,6 +125,24 @@ export async function GET(request: Request) {
       return response({ error: "Please sign in to the admin panel." }, 401);
     const data = await getState();
     const admin = session?.role === "admin";
+    const db = getDb();
+    const [notifications, unread] = admin
+      ? await Promise.all([
+          db
+            .select()
+            .from(t.adminNotifications)
+            .orderBy(
+              sql`CASE WHEN ${t.adminNotifications.readAt} IS NULL THEN 0 ELSE 1 END`,
+              desc(t.adminNotifications.createdAt),
+              desc(t.adminNotifications.id),
+            )
+            .limit(100),
+          db
+            .select({ count: sql<number>`count(*)` })
+            .from(t.adminNotifications)
+            .where(isNull(t.adminNotifications.readAt)),
+        ])
+      : [[], [{ count: 0 }]];
     if (session) await touchSession(session);
     const cookie = await renewCustomerSession(request, session);
     return response(
@@ -134,6 +154,8 @@ export async function GET(request: Request) {
               session?.role === "customer" ? session.user : undefined,
             )),
         registrations: admin ? data.registrations : [],
+        notifications,
+        notificationUnread: unread[0]?.count || 0,
         access: {
           admin,
           csrfToken: session?.csrf || "",
@@ -720,6 +742,9 @@ export async function POST(request: Request) {
           requestKey: b.requestKey,
         };
         ops.push(db.insert(t.bookings).values(result));
+        const notification = websiteBookingNotification(result);
+        if (notification)
+          ops.push(db.insert(t.adminNotifications).values(notification));
         for (let slot = b.start; slot < b.start + b.duration; slot += 30)
           ops.push(
             db.insert(t.bookingSlots).values({
@@ -756,6 +781,23 @@ export async function POST(request: Request) {
         );
         ops.push(
           audit(db, "Court booked", `${bookingId} · ${b.court} · ${b.date}`),
+        );
+        break;
+      }
+      case "notificationsRead": {
+        const b = z
+          .object({ ids: z.array(z.string().min(1).max(100)).min(1).max(100) })
+          .parse(body);
+        ops.push(
+          db
+            .update(t.adminNotifications)
+            .set({ readAt: now })
+            .where(
+              and(
+                inArray(t.adminNotifications.id, b.ids),
+                isNull(t.adminNotifications.readAt),
+              ),
+            ),
         );
         break;
       }

@@ -3,6 +3,7 @@ import {
   text,
   integer,
   uniqueIndex,
+  index,
   check,
 } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
@@ -211,3 +212,17 @@ export const notificationJobs = sqliteTable("notification_jobs", {
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });
+export const adminNotifications = sqliteTable(
+  "admin_notifications",
+  {
+    id: text("id").primaryKey(),
+    kind: text("kind").notNull(),
+    reference: text("reference").notNull(),
+    data: text("data", { mode: "json" }).notNull(),
+    createdAt: text("created_at").notNull(),
+    readAt: text("read_at"),
+  },
+  (table) => [
+    index("admin_notifications_read_created").on(table.readAt, table.createdAt),
+  ],
+);

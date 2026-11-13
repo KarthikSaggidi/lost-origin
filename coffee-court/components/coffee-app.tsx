@@ -32,7 +32,6 @@ import {
   ArrowRight,
   Plus,
   Search,
-  Bell,
   ExternalLink,
   Menu as MenuIcon,
   X,
@@ -77,6 +76,7 @@ import CustomerMenu from "./customer-menu";
 import CartBar from "./cart-bar";
 import { parseIngredients, productIngredients } from "../lib/product-details";
 import AdminCourts from "./admin-courts";
+import BookingNotifications from "./booking-notifications";
 import KitchenBoard from "./kitchen-board";
 import OrderTimeline from "./order-timeline";
 import CustomerActivity from "./customer-activity";
@@ -886,48 +886,34 @@ export default function CoffeeApp({
                   </div>
                 )}
               </div>
-              <div className="notification-wrap">
-                <button
-                  className={`icon-btn notification-btn ${notifications ? "is-active" : ""}`}
-                  aria-label="Notifications"
-                  onClick={() => setNotifications(!notifications)}
-                >
-                  <Bell size={19} />
-                  <span />
-                </button>
-                {notifications && (
-                  <div className="notification-panel">
-                    <h3>Your attention, please</h3>
-                    <button
-                      onClick={() => {
-                        navigate("orders");
-                        setNotifications(false);
-                      }}
-                    >
-                      <ShoppingBag size={18} />
-                      <span>
-                        <b>{active.length} orders in progress</b>
-                        <small>Keep the good coffee flowing.</small>
-                      </span>
-                      <ArrowRight size={15} />
-                    </button>
-                    <button
-                      onClick={() => {
-                        navigate("inventory");
-                        setNotifications(false);
-                      }}
-                    >
-                      <Package size={18} />
-                      <span>
-                        <b>{lowStock.length} items running low</b>
-                        <small>Time for a little restock.</small>
-                      </span>
-                      <ArrowRight size={15} />
-                    </button>
-                    <p>Preview notifications · no messages sent</p>
-                  </div>
-                )}
-              </div>
+              <BookingNotifications
+                records={data.notifications || []}
+                unread={data.notificationUnread || 0}
+                account={data.access?.adminEmail || ""}
+                enabled={loaded && data.access?.admin === true}
+                open={notifications}
+                setOpen={setNotifications}
+                activeOrders={active.length}
+                lowStock={lowStock.length}
+                onOrders={() => navigate("orders")}
+                onInventory={() => navigate("inventory")}
+                onRead={async (ids) => {
+                  await act("notificationsRead", { ids });
+                }}
+                onOpen={(notification) => {
+                  navigate("courts");
+                  const booking = data.bookings.find(
+                    (value) => value.id === notification.reference,
+                  );
+                  if (booking)
+                    setModal({ type: "bookingDetail", value: booking });
+                  else
+                    setToast("Open Court bookings to find this reservation.");
+                  void act("notificationsRead", {
+                    ids: [notification.id],
+                  }).catch(() => {});
+                }}
+              />
               <span className="avatar avatar-sm">KS</span>
             </div>
           </div>

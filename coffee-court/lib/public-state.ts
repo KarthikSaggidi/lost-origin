@@ -32,6 +32,8 @@ export function customerState(
   ];
   return {
     ...data,
+    notifications: [],
+    notificationUnread: 0,
     products: data.products
       .filter((p) => productVisible(p, "website"))
       .map((p) => ({

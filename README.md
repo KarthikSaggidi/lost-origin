@@ -48,6 +48,8 @@ sessions, dependencies and local runtime configuration stay outside Git.
   downloadable PDF bills. Counter POS billing has no pickup slot.
 - Four configurable courts, live availability, conflict protection, customer
   contacts, confirmations, check-in, completion and final bills. Only admins cancel.
+- Live admin booking alerts with saved notifications, unread badges, side popups,
+  notification sound and one-click reservation details.
 - Compact responsive admin login, password changes, revocable sessions, rate
   limits and persistent customer sessions. SMS login awaits provider configuration.
 - Kitchen timeline, POS/website visibility controls, inventory, payment records,
@@ -88,6 +90,7 @@ test services and synthetic records, never a production business database.
 ## Documentation
 
 - [Authentication](coffee-court/docs/authentication.md)
+- [Booking notifications and sound](coffee-court/docs/booking-alerts.md)
 - [Email, WhatsApp and delivery setup](coffee-court/docs/communications.md)
 - [Admin service](lost-origin-admin/README.md)
 - [Login background and prompts](coffee-court/docs/admin-login-background.md)
