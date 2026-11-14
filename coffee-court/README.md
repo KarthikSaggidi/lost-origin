@@ -16,8 +16,8 @@ See [authentication](docs/authentication.md) and
 unconfigured, WhatsApp requires account linking, and payments use demo records.
 No runtime secrets, local databases or browser sessions are committed.
 
-See [POS voice commands and open bills](docs/pos.md) for counter operation,
-browser microphone requirements, saved drafts and billing recovery.
+See [POS open bills](docs/pos.md) for bill previews, independent counter
+scrolling, saved drafts and billing recovery.
 
 Integration scripts require authenticated local admin sessions and write
 synthetic financial records. Follow the authentication guide before running

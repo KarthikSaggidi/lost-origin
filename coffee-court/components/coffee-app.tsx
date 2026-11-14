@@ -75,7 +75,6 @@ import HomeSections from "./home-sections";
 import CustomerMenu from "./customer-menu";
 import CartBar from "./cart-bar";
 import usePosBills from "./use-pos-bills";
-import PosVoice from "./pos-voice";
 import {
   billName,
   type PosBill,
@@ -678,6 +677,22 @@ export default function CoffeeApp({
         ...(surface === "admin" ? { posBillId: pos.active?.id } : {}),
       });
   };
+  const openPosCheckout = (id: string) => {
+    try {
+      if (pos.get(id).items.length)
+        setModal({ type: "checkout", posBillId: id });
+    } catch (e: any) {
+      setToast(e.message);
+    }
+  };
+  const openPosBill = (id: string) => {
+    try {
+      pos.select(id);
+      setModal({ type: "posBillPreview", posBillId: id });
+    } catch (e: any) {
+      setToast(e.message);
+    }
+  };
   const posAction = (run: () => unknown) => {
     try {
       run();
@@ -1108,26 +1123,13 @@ export default function CoffeeApp({
                   workspace={pos.workspace}
                   bill={pos.active}
                   notice={pos.notice}
-                  blocked={
-                    Boolean(modal) ||
-                    sidebar ||
-                    notifications ||
-                    Boolean(search)
-                  }
                   offline={offline}
                   newBill={() => posAction(pos.newBill)}
-                  selectBill={(id) => posAction(() => pos.select(id))}
+                  openBill={openPosBill}
                   closeBill={(id) => posAction(() => pos.close(id))}
                   rename={(label) =>
                     posAction(() => pos.rename(pos.active!.id, label))
                   }
-                  voiceAdd={(items, id) => {
-                    if (pos.workspace?.activeId !== id)
-                      throw new Error(
-                        "The active bill changed. Repeat the command for this bill.",
-                      );
-                    pos.addItems(id, items);
-                  }}
                   add={(p) =>
                     setModal({
                       type: "modifier",
@@ -1138,7 +1140,7 @@ export default function CoffeeApp({
                   updateQuantity={(n, d) =>
                     posAction(() => pos.adjust(pos.active!.id, n, d))
                   }
-                  checkout={openCheckout}
+                  checkout={(id) => openPosCheckout(id)}
                   clear={() => posAction(() => pos.clear(pos.active!.id))}
                 />
               ) : (
@@ -1509,6 +1511,32 @@ export default function CoffeeApp({
           }}
         />
       )}
+      {modal?.type === "posBillPreview" &&
+        pos.workspace?.bills.some((bill) => bill.id === modal.posBillId) && (
+          <PosBillPreview
+            bill={pos.workspace.bills.find(
+              (bill) => bill.id === modal.posBillId,
+            )!}
+            taxRate={business.taxRate}
+            close={() => setModal(null)}
+            fields={(patch: Partial<PosFields>) =>
+              posAction(() => pos.fields(modal.posBillId!, patch))
+            }
+            update={(index: number, delta: number) =>
+              posAction(() => pos.adjust(modal.posBillId!, index, delta))
+            }
+            clear={() => posAction(() => pos.clear(modal.posBillId!))}
+            closeBill={() => {
+              try {
+                pos.close(modal.posBillId!);
+                setModal(null);
+              } catch (e: any) {
+                setToast(e.message);
+              }
+            }}
+            checkout={() => openPosCheckout(modal.posBillId!)}
+          />
+        )}
       {modal?.type === "confirmation" && (
         <TransactionConfirmation
           record={modal.value.record}
@@ -2633,30 +2661,26 @@ function POS({
   workspace,
   bill,
   notice,
-  blocked,
   offline,
   newBill,
-  selectBill,
+  openBill,
   closeBill,
   rename,
-  voiceAdd,
 }: {
   data: State;
   cart: Item[];
   add: (p: Product) => void;
   updateQuantity: (n: number, d: number) => void;
-  checkout: () => void;
+  checkout: (id: string) => void;
   clear: () => void;
   workspace: PosWorkspace;
   bill: PosBill;
   notice: string;
-  blocked: boolean;
   offline: boolean;
   newBill: () => void;
-  selectBill: (id: string) => void;
+  openBill: (id: string) => void;
   closeBill: (id: string) => void;
   rename: (label: string) => void;
-  voiceAdd: (items: Item[], id: string) => void;
 }) {
   const [category, setCategory] = useState("All items"),
     [query, setQuery] = useState("");
@@ -2701,7 +2725,7 @@ function POS({
               role="tab"
               aria-selected={bill.id === b.id}
               className={bill.id === b.id ? "active" : ""}
-              onClick={() => selectBill(b.id)}
+              onClick={() => openBill(b.id)}
             >
               <Receipt size={15} />
               <span>
@@ -2729,15 +2753,6 @@ function POS({
           New bill
         </button>
       </div>
-      <PosVoice
-        key={bill.id}
-        billId={bill.id}
-        products={data.products}
-        inventory={data.inventory}
-        cart={bill.items}
-        blocked={blocked || locked}
-        add={voiceAdd}
-      />
       <div className="pos-layout">
         <section>
           <div className="search-input pos-search">
@@ -2882,7 +2897,7 @@ function POS({
             <button
               className="btn primary full"
               disabled={!cart.length || bill.status === "submitting"}
-              onClick={checkout}
+              onClick={() => checkout(bill.id)}
             >
               {bill.status === "uncertain"
                 ? "Recover bill"
@@ -2902,7 +2917,7 @@ function POS({
           <button
             className="btn primary"
             disabled={bill.status === "submitting"}
-            onClick={checkout}
+            onClick={() => openBill(bill.id)}
           >
             {bill.status === "uncertain" ? "Recover bill" : "Review bill"}
             <ArrowRight size={16} />
@@ -2910,6 +2925,191 @@ function POS({
         </div>
       )}
     </>
+  );
+}
+
+function PosBillPreview({
+  bill,
+  taxRate,
+  close,
+  fields,
+  update,
+  clear,
+  closeBill,
+  checkout,
+}: {
+  bill: PosBill;
+  taxRate: number;
+  close: () => void;
+  fields: (patch: Partial<PosFields>) => void;
+  update: (index: number, delta: number) => void;
+  clear: () => void;
+  closeBill: () => void;
+  checkout: () => void;
+}) {
+  const locked = bill.status !== "draft";
+  const totals = calculate(bill.items, bill.fields.coupon, taxRate);
+  const hasDetails = Boolean(
+    bill.fields.customer ||
+    bill.fields.phone ||
+    bill.fields.notes ||
+    bill.fields.coupon,
+  );
+  return (
+    <Modal
+      title={`${billName(bill)}${bill.label ? ` · ${bill.label}` : ""}`}
+      close={close}
+      wide
+      className="pos-bill-preview-modal"
+    >
+      <div className="pos-bill-preview">
+        <section className="pos-bill-preview-items">
+          <div className="pos-preview-section-heading">
+            <div>
+              <span className="eyebrow">COUNTER TAKEAWAY</span>
+              <h3>Items in this bill</h3>
+            </div>
+            <span className="badge">
+              <span />
+              {bill.status === "submitting"
+                ? "Creating"
+                : bill.status === "uncertain"
+                  ? "Needs recovery"
+                  : `${bill.items.reduce((sum, item) => sum + item.quantity, 0)} items`}
+            </span>
+          </div>
+          <CartItems cart={bill.items} update={update} disabled={locked} />
+          {!bill.items.length && (
+            <Empty
+              title="This bill is empty"
+              detail="Close this preview and add a drink or a bite from the POS menu."
+            />
+          )}
+        </section>
+        <aside className="pos-bill-preview-details">
+          {locked && (
+            <p className="notice" role="status">
+              {bill.status === "submitting"
+                ? "This bill is being created. You can return to the counter."
+                : "The billing result needs checking. Recover this bill to continue."}
+            </p>
+          )}
+          <h3>Billing details</h3>
+          <Field label="Name (optional)">
+            <input
+              value={bill.fields.customer}
+              onChange={(event) => fields({ customer: event.target.value })}
+              disabled={locked}
+              maxLength={80}
+              placeholder="Walk-in customer"
+            />
+          </Field>
+          <Field label="Mobile number (optional)">
+            <input
+              value={bill.fields.phone}
+              onChange={(event) => fields({ phone: event.target.value })}
+              disabled={locked}
+              inputMode="numeric"
+              maxLength={10}
+              placeholder="98765 43210"
+            />
+          </Field>
+          <Field label="Note (optional)">
+            <textarea
+              value={bill.fields.notes}
+              onChange={(event) => fields({ notes: event.target.value })}
+              disabled={locked}
+              maxLength={500}
+              rows={2}
+              placeholder="A note for the barista"
+            />
+          </Field>
+          <Field label="Coupon code (optional)">
+            <input
+              value={bill.fields.coupon}
+              onChange={(event) =>
+                fields({ coupon: event.target.value.toUpperCase() })
+              }
+              disabled={locked}
+              maxLength={30}
+              placeholder="Enter a code"
+            />
+          </Field>
+          <div className="form-section-title">
+            <span>01</span>Payment method
+          </div>
+          <div className="payment-options">
+            {(["Cash", "UPI", "Card"] as const).map((method) => (
+              <button
+                key={method}
+                type="button"
+                className={bill.fields.paymentMode === method ? "chosen" : ""}
+                disabled={locked}
+                aria-pressed={bill.fields.paymentMode === method}
+                onClick={() => fields({ paymentMode: method })}
+              >
+                {method === "Cash" ? (
+                  <Wallet size={17} />
+                ) : (
+                  <CreditCard size={17} />
+                )}
+                <span>{method}</span>
+                {bill.fields.paymentMode === method && (
+                  <CheckCircle2 size={15} />
+                )}
+              </button>
+            ))}
+          </div>
+          <div className="pos-preview-totals">
+            <div>
+              <span>Subtotal</span>
+              <b>{money(totals.subtotal)}</b>
+            </div>
+            {totals.discount > 0 && (
+              <div>
+                <span>Discount</span>
+                <span>−{money(totals.discount)}</span>
+              </div>
+            )}
+            <div>
+              <span>Tax ({taxRate}%)</span>
+              <span>{money(totals.tax)}</span>
+            </div>
+            <div className="total-line">
+              <strong>Total</strong>
+              <strong>{money(totals.total)}</strong>
+            </div>
+          </div>
+          <button
+            className="btn primary full"
+            disabled={!bill.items.length || bill.status === "submitting"}
+            onClick={checkout}
+          >
+            {bill.status === "uncertain" ? "Recover bill" : "Review and bill"}
+            <ArrowRight size={16} />
+          </button>
+          <div className="pos-preview-secondary-actions">
+            <button
+              className="text-btn"
+              disabled={locked || (!bill.items.length && !hasDetails)}
+              onClick={clear}
+            >
+              Clear bill
+            </button>
+            <button
+              className="text-btn"
+              disabled={locked || bill.items.length > 0 || hasDetails}
+              onClick={closeBill}
+            >
+              Close empty bill
+            </button>
+          </div>
+          <p className="micro-copy">
+            Instant billing · tax added at checkout · no pickup time.
+          </p>
+        </aside>
+      </div>
+    </Modal>
   );
 }
 
