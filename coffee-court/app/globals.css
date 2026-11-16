@@ -16091,6 +16091,15 @@ textarea::placeholder {
   line-height: 1.8;
   color: #66634f;
 }
+.local-otp-note {
+  margin: -10px 0 16px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #f2f4e9;
+  color: #3d553f;
+  font-size: 12px;
+  line-height: 1.6;
+}
 .customer-session-note {
   display: flex;
   align-items: flex-start;
@@ -16287,6 +16296,9 @@ textarea::placeholder {
 .email-delivery-note svg {
   flex-shrink: 0;
   margin-top: 3px;
+}
+.whatsapp-delivery-note svg {
+  color: #287844;
 }
 .email-delivery-note b {
   font-weight: 500;

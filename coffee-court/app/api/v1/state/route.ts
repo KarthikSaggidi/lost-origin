@@ -46,7 +46,10 @@ import {
   validWriteOrigin,
 } from "../../../../lib/auth-transport";
 import { customerState } from "../../../../lib/public-state";
-import { otpConfigured } from "../../../../lib/otp-provider";
+import {
+  otpConfigured,
+  terminalOtpConfigured,
+} from "../../../../lib/otp-provider";
 import { env } from "cloudflare:workers";
 import {
   popupCampaignSchema,
@@ -92,22 +95,56 @@ function fail(message: string): never {
   throw new BusinessError(message);
 }
 async function replayReceipt(record: any) {
-  if (!record.email) return response(record);
-  const job = (
-    await getDb()
-      .select({
-        status: notificationJobs.status,
-        detail: notificationJobs.detail,
-      })
-      .from(notificationJobs)
-      .where(
-        eq(
-          notificationJobs.id,
-          communicationId(`confirmation-email:${record.id}`),
-        ),
-      )
-  )[0];
-  return response({ ...record, emailDelivery: job || { status: "Disabled" } });
+  const db = getDb();
+  const [email, whatsapp] = await Promise.all([
+    record.email
+      ? db
+          .select({
+            status: notificationJobs.status,
+            detail: notificationJobs.detail,
+          })
+          .from(notificationJobs)
+          .where(
+            eq(
+              notificationJobs.id,
+              communicationId(`confirmation-email:${record.id}`),
+            ),
+          )
+          .then((rows: any[]) => rows[0])
+      : Promise.resolve(undefined),
+    record.phone && ["Website", "Online"].includes(record.source)
+      ? db
+          .select({
+            status: notificationJobs.status,
+            detail: notificationJobs.detail,
+          })
+          .from(notificationJobs)
+          .where(
+            eq(
+              notificationJobs.id,
+              communicationId(`confirmation-whatsapp:${record.id}`),
+            ),
+          )
+          .then((rows: any[]) => rows[0])
+      : Promise.resolve(undefined),
+  ]);
+  return response({
+    ...record,
+    ...(record.email
+      ? { emailDelivery: email || { status: "Pending" } }
+      : {}),
+    ...(record.phone && ["Website", "Online"].includes(record.source)
+      ? { whatsappDelivery: whatsapp || { status: "Pending" } }
+      : {}),
+  });
+}
+function localTerminalOtpAvailable(request: Request) {
+  const url = new URL(request.url);
+  return (
+    terminalOtpConfigured(env) &&
+    url.protocol === "http:" &&
+    ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)
+  );
 }
 function recordGuard(db: any, kind: "order" | "booking", record: any) {
   return db.insert(t.operationGuards).values({
@@ -161,7 +198,7 @@ export async function GET(request: Request) {
           csrfToken: session?.csrf || "",
           customer: session?.role === "customer" ? session.user : null,
           adminEmail: admin ? session.user.email : undefined,
-          otpAvailable: otpConfigured(env),
+          otpAvailable: otpConfigured(env) || localTerminalOtpAvailable(request),
         },
       },
       200,
@@ -198,6 +235,17 @@ export async function POST(request: Request) {
     body.action === "campaignRegistration" ||
     (body.action === "booking" && body.source !== "Admin") ||
     (body.action === "order" && body.source === "Online");
+  const websiteTransaction =
+    (body.action === "order" && body.source === "Online") ||
+    (body.action === "booking" && body.source !== "Admin");
+  if (websiteTransaction && session?.role !== "customer")
+    return response(
+      {
+        error: "Sign in with your mobile number before ordering or booking.",
+        loginRequired: true,
+      },
+      401,
+    );
   if (!customerAction && session?.role !== "admin")
     return response(
       { error: "Administrator access is required for this action." },
@@ -1562,7 +1610,8 @@ export async function POST(request: Request) {
           set: { version: sql`${t.realtimeClock.version}+1` },
         }),
     );
-    let emailId = "";
+    let emailId = "",
+      whatsappId = "";
     const finalCourtBill =
       body.action === "bookingStatus" && body.status === "Completed";
     if (
@@ -1603,12 +1652,54 @@ export async function POST(request: Request) {
         );
       } else result.emailDelivery = { status: "Disabled" };
     }
+    const websiteConfirmation =
+      (body.action === "order" && result.source === "Online") ||
+      (body.action === "booking" && result.source === "Website");
+    if (websiteConfirmation && result.phone) {
+      const business =
+        (
+          await db
+            .select()
+            .from(t.settings)
+            .where(eq(t.settings.key, "business"))
+        )[0]?.value || {};
+      const notification = queuedNotification(
+        "whatsapp",
+        result.id,
+        `+91${result.phone}`,
+        {
+          kind: body.action,
+          record: result,
+          business,
+          subject: `${body.action === "booking" ? "Booking confirmed" : "Order confirmed"} · ${result.id}`,
+        },
+        `confirmation-whatsapp:${result.id}`,
+      );
+      whatsappId = notification.id;
+      ops.push(
+        db
+          .insert(notificationJobs)
+          .values(notification)
+          .onConflictDoNothing(),
+      );
+    }
     await db.batch(ops);
-    if (emailId)
-      result.emailDelivery = await submitNotification(emailId).catch(() => ({
-        status: "Pending",
-        detail: "Your transaction is saved. Email delivery is pending.",
-      }));
+    const [emailDelivery, whatsappDelivery] = await Promise.all([
+      emailId
+        ? submitNotification(emailId).catch(() => ({
+            status: "Pending",
+            detail: "Your transaction is saved. Email delivery is pending.",
+          }))
+        : Promise.resolve(undefined),
+      whatsappId
+        ? submitNotification(whatsappId).catch(() => ({
+            status: "Pending",
+            detail: "Your transaction is saved. WhatsApp delivery is pending.",
+          }))
+        : Promise.resolve(undefined),
+    ]);
+    if (emailDelivery) result.emailDelivery = emailDelivery;
+    if (whatsappDelivery) result.whatsappDelivery = whatsappDelivery;
     return response(result);
   } catch (e: any) {
     if (e instanceof z.ZodError)

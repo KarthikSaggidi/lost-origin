@@ -670,12 +670,26 @@ export default function CoffeeApp({
         )
         .filter((x) => x.quantity > 0),
     );
-  const openCheckout = () => {
-    if (cart.length)
+  const openBookingForm = (value: any) => {
+    if (customerView && !data.access?.customer) {
       setModal({
-        type: "checkout",
-        ...(surface === "admin" ? { posBillId: pos.active?.id } : {}),
+        type: "customerLogin",
+        value: { intent: "booking", booking: value },
       });
+      return;
+    }
+    setModal({ type: "booking", value });
+  };
+  const openCheckout = () => {
+    if (!cart.length) return;
+    if (customerView && !data.access?.customer) {
+      setModal({ type: "customerLogin", value: { intent: "checkout" } });
+      return;
+    }
+    setModal({
+      type: "checkout",
+      ...(surface === "admin" ? { posBillId: pos.active?.id } : {}),
+    });
   };
   const openPosCheckout = (id: string) => {
     try {
@@ -774,6 +788,7 @@ export default function CoffeeApp({
     data: pageData,
     navigate,
     setModal,
+    openBookingForm,
     mutate,
     openOrder,
     busy,
@@ -1158,7 +1173,7 @@ export default function CoffeeApp({
             {view === "book" && (
               <CustomerCourts
                 data={data}
-                confirm={(value) => setModal({ type: "booking", value })}
+                confirm={openBookingForm}
               />
             )}
             {view === "inventory" && <Inventory {...common} />}
@@ -1393,8 +1408,21 @@ export default function CoffeeApp({
       {modal?.type === "customerLogin" && (
         <CustomerLogin
           close={() => setModal(null)}
-          done={() => {
-            setModal(null);
+          done={(user) => {
+            const intent = modal.value?.intent;
+            setData((current) => ({
+              ...current,
+              access: {
+                ...current.access,
+                admin: false,
+                customer: user,
+              },
+            }));
+            if (intent === "checkout")
+              setModal({ type: "checkout", value: { customer: user } });
+            else if (intent === "booking")
+              setModal({ type: "booking", value: modal.value.booking });
+            else setModal(null);
             void load();
           }}
         />
@@ -1469,7 +1497,7 @@ export default function CoffeeApp({
             posAction(() => pos.fields(modal.posBillId!, patch))
           }
           counterSubmit={() => submitCounter(modal.posBillId!)}
-          customer={data.access?.customer}
+          customer={modal.value?.customer || data.access?.customer}
           act={act}
           busy={busy}
           close={() => setModal(null)}
@@ -1720,6 +1748,7 @@ type Common = {
   data: State;
   navigate: (v: string) => void;
   setModal: (m: { type: string; value?: any }) => void;
+  openBookingForm: (value: any) => void;
   mutate: (a: string, v: Record<string, any>, s?: string) => void;
   openOrder: (o: Order) => void;
   busy: boolean;
@@ -1791,7 +1820,7 @@ function Stat({
     </div>
   );
 }
-function Overview({ data, navigate, setModal, openOrder }: Common) {
+function Overview({ data, navigate, setModal, openOrder, openBookingForm }: Common) {
   const [period, setPeriod] = useState("Today"),
     [stream, setStream] = useState("All revenue");
   const today = todayIST();
@@ -2112,9 +2141,7 @@ function Overview({ data, navigate, setModal, openOrder }: Common) {
                   </div>
                   <button
                     className="btn secondary small"
-                    onClick={() =>
-                      setModal({ type: "booking", value: { court: c } })
-                    }
+                    onClick={() => openBookingForm({ court: c })}
                   >
                     Book a slot <Plus size={14} />
                   </button>
@@ -3693,6 +3720,7 @@ function OrderDetail({ order: o, close, mutate, busy, admin, onPrint }: any) {
 function Courts({
   data,
   setModal,
+  openBookingForm,
   customer = false,
 }: Common & { customer?: boolean }) {
   const [date, setDate] = useState(todayIST()),
@@ -3756,7 +3784,7 @@ function Courts({
       >
         <button
           className="btn primary"
-          onClick={() => setModal({ type: "booking", value: { date } })}
+          onClick={() => openBookingForm({ date })}
         >
           <Plus size={16} />
           {customer ? "Find your court" : "New booking"}
@@ -3934,10 +3962,7 @@ function Courts({
                             }
                             className="free-slot"
                             onClick={() =>
-                              setModal({
-                                type: "booking",
-                                value: { date, court: c, start, duration: 30 },
-                              })
+                              openBookingForm({ date, court: c, start, duration: 30 })
                             }
                           >
                             {past ? (

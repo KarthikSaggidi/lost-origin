@@ -199,9 +199,33 @@ export function EmailDeliveryStatus({ record }: { record: Order | Booking }) {
             ? "Confirmation and PDF bill sent."
             : status === "Disabled"
               ? "Email receipts are switched off. Your confirmation is saved; download your bill below."
-              : status === "Queued" || status === "Sending"
+              : status === "Waiting for SMTP"
+                ? "Saved, but email is waiting for SMTP settings. Download your bill below."
+                : status === "Queued" || status === "Sending"
                 ? "Your confirmation and PDF bill are queued for email."
-                : "Your confirmation is saved. Email delivery is pending. Download your bill below."}
+                : record.emailDelivery?.detail ||
+                  "Your confirmation is saved. Email delivery is pending. Download your bill below."}
+        </p>
+      </div>
+    </div>
+  );
+}
+export function WhatsAppDeliveryStatus({ record }: { record: Order | Booking }) {
+  if (!record.whatsappDelivery) return null;
+  const { status, detail } = record.whatsappDelivery;
+  return (
+    <div className="email-delivery-note whatsapp-delivery-note">
+      <MessageCircle size={18} />
+      <div>
+        <b>WhatsApp confirmation</b>
+        <p>
+          {status === "Sent"
+            ? "Confirmation and PDF bill sent through WhatsApp."
+            : status === "Waiting for WhatsApp"
+              ? "Saved for WhatsApp. Connect the café's WhatsApp device in the admin panel to send it."
+              : status === "Queued" || status === "Sending"
+                ? "Your confirmation and PDF bill are queued for WhatsApp."
+                : detail || "Your confirmation is saved. WhatsApp delivery is pending."}
         </p>
       </div>
     </div>
@@ -288,6 +312,7 @@ export function TransactionConfirmation({
         </div>
       </dl>
       <EmailDeliveryStatus record={record} />
+      <WhatsAppDeliveryStatus record={record} />
       <div className="confirmation-actions">
         <DownloadBill record={record} kind={kind} />
         <button className="btn secondary" onClick={print}>

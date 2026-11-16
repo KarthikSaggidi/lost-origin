@@ -8,7 +8,7 @@ export default function CustomerLogin({
   done,
 }: {
   close: () => void;
-  done: () => void;
+  done: (user: { id: string; phone: string; name: string }) => void;
 }) {
   const [phone, setPhone] = useState(""),
     [name, setName] = useState(""),
@@ -16,7 +16,8 @@ export default function CustomerLogin({
     [challenge, setChallenge] = useState(""),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
-    [wait, setWait] = useState(0);
+    [wait, setWait] = useState(0),
+    [terminalDelivery, setTerminalDelivery] = useState(false);
   useEffect(() => {
     if (!wait) return;
     const timer = setTimeout(() => setWait(wait - 1), 1000);
@@ -32,6 +33,7 @@ export default function CustomerLogin({
     if (!response.ok)
       throw new Error(value.error || "The code could not be sent.");
     setChallenge(value.challenge);
+    setTerminalDelivery(value.delivery === "terminal");
     setCode("");
     setWait(value.resendAfter);
   };
@@ -51,6 +53,11 @@ export default function CustomerLogin({
             : "Sign in with your mobile number to see your orders and court bookings."}
         </p>
       </div>
+      {challenge && terminalDelivery && (
+        <p className="local-otp-note" role="status">
+          Your sign-in code was printed in the terminal running the local website.
+        </p>
+      )}
       <form
         onSubmit={async (event) => {
           event.preventDefault();
@@ -68,7 +75,7 @@ export default function CustomerLogin({
               if (!response.ok)
                 throw new Error(value.error || "Verification failed.");
               setCsrfToken(value.csrfToken);
-              done();
+              done(value.user);
             }
           } catch (e: any) {
             setError(e.message);

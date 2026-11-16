@@ -27,10 +27,15 @@ import {
 import {
   passwordHash,
   randomToken,
+  secretEqual,
   tokenHash,
   verifyPassword,
 } from "../../../../lib/auth-crypto";
-import { otpConfigured, otpProvider } from "../../../../lib/otp-provider";
+import {
+  otpConfigured,
+  otpProvider,
+  terminalOtpConfigured,
+} from "../../../../lib/otp-provider";
 export const dynamic = "force-dynamic";
 const reply = (body: any, status = 200, cookie?: string) =>
   Response.json(body, {
@@ -40,6 +45,13 @@ const reply = (body: any, status = 200, cookie?: string) =>
       ...(cookie ? { "Set-Cookie": cookie } : {}),
     },
   });
+function isLoopbackRequest(request: Request) {
+  const url = new URL(request.url);
+  return (
+    url.protocol === "http:" &&
+    ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)
+  );
+}
 export async function GET(
   request: Request,
   context: { params: Promise<{ action: string[] }> },
@@ -55,7 +67,9 @@ export async function GET(
       role: session?.role || (adminTransport(request) ? "admin" : "customer"),
       user: session?.user || null,
       csrfToken: session?.csrf || "",
-      otpAvailable: otpConfigured(env),
+      otpAvailable:
+        otpConfigured(env) ||
+        (terminalOtpConfigured(env) && isLoopbackRequest(request)),
     },
     200,
     cookie,
@@ -140,7 +154,9 @@ export async function POST(
           name: z.string().trim().min(2).max(80),
         })
         .parse(body);
-      if (!otpConfigured(env))
+      const localTerminal =
+        terminalOtpConfigured(env) && isLoopbackRequest(request);
+      if (!otpConfigured(env) && !localTerminal)
         return reply(
           {
             error:
@@ -163,16 +179,33 @@ export async function POST(
           { error: "Please wait before requesting another code." },
           429,
         );
-      const verification = await otpProvider(env, "send", b.phone);
       const id = randomToken();
+      let providerId: string;
+      if (localTerminal) {
+        const code = String(
+          crypto.getRandomValues(new Uint32Array(1))[0] % 1000000,
+        ).padStart(6, "0");
+        providerId = `local:${tokenHash(`${tokenHash(id)}:${code}`)}`;
+        console.info(
+          `[Lost Origin local sign-in] Mobile ending ${b.phone.slice(-4)} · OTP ${code} · expires in 5 minutes`,
+        );
+      } else {
+        const verification = await otpProvider(env, "send", b.phone);
+        providerId = verification.sid!;
+      }
       await db.insert(authChallenges).values({
         id: tokenHash(id),
         phone: b.phone,
         name: b.name,
-        providerId: verification.sid!,
+        providerId,
         expiresAt: now + 300000,
       });
-      return reply({ challenge: id, expiresIn: 300, resendAfter: 60 });
+      return reply({
+        challenge: id,
+        expiresIn: 300,
+        resendAfter: 60,
+        delivery: localTerminal ? "terminal" : "sms",
+      });
     }
     if (action === "otp/verify") {
       if (adminTransport(request))
@@ -185,7 +218,9 @@ export async function POST(
             .regex(/^\d{6}$/, "Enter the six-digit verification code."),
         })
         .parse(body);
-      if (!otpConfigured(env))
+      const localTerminalAvailable =
+        terminalOtpConfigured(env) && isLoopbackRequest(request);
+      if (!otpConfigured(env) && !localTerminalAvailable)
         return reply({ error: "SMS login is not configured yet." }, 503);
       if (
         !(await enforceRate(
@@ -221,7 +256,19 @@ export async function POST(
           },
           400,
         );
-      const checked = await otpProvider(env, "check", challenge.phone, b.code);
+      let checked: { status?: string };
+      if (challenge.providerId.startsWith("local:")) {
+        const expected = challenge.providerId.slice("local:".length);
+        const provided = tokenHash(`${challenge.id}:${b.code}`);
+        checked = {
+          status:
+            localTerminalAvailable && secretEqual(expected, provided)
+              ? "approved"
+              : "denied",
+        };
+      } else {
+        checked = await otpProvider(env, "check", challenge.phone, b.code);
+      }
       if (checked.status !== "approved")
         return reply({ error: "The code is invalid or has expired." }, 400);
       const consumed = await db

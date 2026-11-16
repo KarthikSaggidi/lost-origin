@@ -2,7 +2,11 @@ export type OtpConfig = {
   TWILIO_ACCOUNT_SID?: string;
   TWILIO_AUTH_TOKEN?: string;
   TWILIO_VERIFY_SERVICE_SID?: string;
+  LOCAL_OTP_TERMINAL?: string;
 };
+export function terminalOtpConfigured(config: OtpConfig) {
+  return config.LOCAL_OTP_TERMINAL === "1";
+}
 export function otpConfigured(config: OtpConfig) {
   return (
     /^AC[a-fA-F0-9]{32}$/.test(config.TWILIO_ACCOUNT_SID || "") &&

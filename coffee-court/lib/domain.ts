@@ -29,6 +29,7 @@ export type Order = {
   email?: string;
   marketingOptIn?: number;
   emailDelivery?: { status: string; detail?: string };
+  whatsappDelivery?: { status: string; detail?: string };
   timeline?: { status: string; at: string }[];
   id: string;
   customer: string;
@@ -51,6 +52,7 @@ export type Booking = {
   email?: string;
   marketingOptIn?: number;
   emailDelivery?: { status: string; detail?: string };
+  whatsappDelivery?: { status: string; detail?: string };
   source?: string;
   pricing?: BookingPricing;
   checkedInAt?: string | null;
